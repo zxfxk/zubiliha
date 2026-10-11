@@ -55,7 +55,7 @@ h3 { font: 600 15px/1.3 var(--body); margin: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 @media (max-width: 380px) { .grid3 { grid-template-columns: 1fr 1fr; } }
-label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); letter-spacing: .02em; min-width: 0; }
+label, .lbl { display: grid; gap: 4px; font-size: 12px; color: var(--muted); letter-spacing: .02em; min-width: 0; }
 input, select, textarea {
   font: 16px/1.3 var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
   border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
@@ -74,6 +74,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .muted { color: var(--muted); font-size: 13px; }
 .note { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg.owner { display: flex; } .seg.owner button { flex: 1; font-size: 16px; padding: 0; min-height: 42px; }
 .seg button { border: 0; background: var(--surface); color: var(--muted); font: 600 13px var(--body); padding: 8px 10px; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
 .seg button.st-noshow[aria-pressed="true"] { background: var(--marker); color: var(--marker-fg); }
@@ -113,6 +114,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .preview .h { font-weight: 700; }
 .preview .red { color: #f00; font-weight: 700; }
 .preview mark { background: #ff0; color: #000; }
+.preview td.off, .preview td.off .red, .preview .offt { color: #bfbfbf; }
+.preview td.off .on { color: #000; }
 .shotsrc table { border-collapse: separate; border-spacing: 0; border-top: 1px solid #000; border-left: 1px solid #000; }
 .shotsrc td { border-width: 0 1px 1px 0; }
 .preview .date { text-align: center; font: 13px Calibri, Arial, sans-serif; padding: 4px; }
@@ -150,6 +153,9 @@ details.backup { margin-top: 12px; }
   .preview:not(.shotsrc) table { font-size: 13px; }
   .preview:not(.shotsrc) .date { font-size: 15px; }
 }
+.tally { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.tally b { min-width: 24px; } .tally label { display: flex; align-items: center; gap: 6px; margin: 0; } .tally input { width: 64px; }
+.tally .btn { margin-left: auto; } .tmonth { align-items: center; gap: 12px; }
 .hist { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted, inherit); }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -264,7 +270,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); updateTop(); queueSync(); }
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); recordTally(); updateTop(); queueSync(); }
 
   // История дня на этом телефоне: копия перед опасными действиями, перед чужой большой правкой и раз в 15 минут.
   const HIST_KEY = 'zubilikha_history_v1';
@@ -319,6 +325,23 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (v) marks[k] = true; else delete marks[k];
     safeSet(MARKS_KEY, JSON.stringify(marks));
     queueSync();
+  }
+
+  // Подсчёт за месяц: сколько газелей было у Димы и у Миши в каждый день. Общий для обоих, правится руками.
+  const TALLY_KEY = 'zubilikha_tally_v1';
+  let tally = {};
+  try { tally = JSON.parse(localStorage.getItem(TALLY_KEY) || '{}') || {}; } catch (e) { tally = {}; }
+  let tallyMonth = '';
+  function saveTally() { safeSet(TALLY_KEY, JSON.stringify(tally)); }
+  // Текущий день записывается сам, пока его не поправили руками.
+  function recordTally() {
+    if (day.example || !/^\d{4}-\d{2}-\d{2}$/.test(day.date || '')) return;
+    const t = C.vanTally(day), old = tally[day.date];
+    if (old && old.manual) return;
+    if (!t.d && !t.m) { if (old) { delete tally[day.date]; saveTally(); } return; }
+    if (old && old.d === t.d && old.m === t.m) return;
+    tally[day.date] = { d: t.d, m: t.m };
+    saveTally();
   }
 
   // Настройки газелей по датам, чтобы взять «как в прошлый раз».
@@ -391,7 +414,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function gTitle(g) {
     const i = day.gazelles.indexOf(g);
     if (g.vehicle === 'машина') return (i + 1) + '. ' + g.kind + ', ' + ((g.carName || 'машина') + ' ' + (g.number || '')).trim();
-    return (i + 1) + '. ' + g.kind + (g.number ? ' №' + g.number : '') + (g.letter ? ' ' + g.letter : '');
+    return (i + 1) + '. ' + g.kind + (g.number ? ' №' + g.number : '') + (g.letter ? ' ' + g.letter : '') + (g.noOrder ? ' (заявки нет)' : '');
   }
   function gShort(g, gi) {
     return (gi + 1) + (g.vehicle === 'машина' ? 'М' : g.kind === 'Цех' ? 'Ц' : g.kind === 'Цех/поле' ? 'ЦП' : 'П');
@@ -580,9 +603,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         '<div class="grid3">' +
         (g.vehicle === 'машина'
           ? field('Марка', pre + 'carName', g.carName, 'placeholder="тойота королла"') + field('Номер', pre + 'number', g.number, 'inputmode="numeric"')
-          : field('Номер', pre + 'number', g.number, 'inputmode="numeric"') + field('Буква', pre + 'letter', g.letter)) +
+          : field('Номер', pre + 'number', g.number, 'inputmode="numeric"') +
+            '<div class="lbl">Чья<div class="seg owner" role="group" aria-label="Чья газель">' + ['М', 'Д'].map(function (k) {
+              return '<button data-act="gLetter" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (C.owner(g) === k) + '" title="' + (k === 'М' ? 'Миша' : 'Дима') + '">' + k + '</button>';
+            }).join('') + '</div></div>') +
         field('Мест', pre + 'capacity', g.capacity, 'type="number" inputmode="numeric" min="1"') +
         '</div>' +
+        (g.kind === 'Цех' && g.vehicle !== 'машина'
+          ? '<div class="row"><button class="chip" data-act="gNoOrder" data-i="' + i + '" aria-pressed="' + !!g.noOrder + '">' + (g.noOrder ? '✓ заявки в цех пока нет' : 'Заявки в цех пока нет') + '</button>' +
+            (g.noOrder ? '<span class="muted">В Word бледным списком, в Excel не попадёт.</span>' : '') + '</div>'
+          : '') +
         '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'payShop', 'start', 'end', 'work', 'workShop', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
         '<div class="grid3" style="margin-top:10px">' +
         field('Выезд в', pre + 'departure', g.departure, 'placeholder="' + esc(d.departure) + '"') +
@@ -668,7 +698,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       h += '<div class="card"><details><summary>Отказались (' + refused.length + ')</summary><div style="display:grid;gap:10px;margin-top:10px">' +
         refused.map(function (p, i) { return personRow(p, i + 1); }).join('') + '</div></details></div>';
     }
-    h += '<div class="card"><h2>Замена</h2><div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div></div>';
+    h += '<div class="card"><h2>Замена</h2><div class="muted">Те, кто не поместился в газели.</div><div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div>' +
+      (none.length ? '<div class="row"><button class="btn small" data-act="replaceFill">Взять из «Без газели» (' + none.length + ')</button></div>' : '') + '</div>';
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
   }
@@ -907,8 +938,31 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<div class="row"><button class="btn primary" data-act="dlExcel">Скачать Excel</button></div></div>' +
       '<div class="card"><h2>Итог дня</h2><div class="total">Вышли ' + went + ' чел. × ' + (+day.rate || 0) + ' ₽ = <b>' +
       (went * (+day.rate || 0)).toLocaleString('ru-RU') + ' ₽</b></div><div class="muted">Только для вас, в Word и Excel не попадает.</div></div>' +
+      tallyCard() +
       '<div id="dlMsg" class="muted" role="status"></div>' +
       '</section>';
+  }
+
+  function tallyCard() {
+    const ym = tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
+    const t = C.tallyText(tally, ym);
+    const p = ym.split('-');
+    const title = C.MONTHS_NOM[+p[1] - 1] || '';
+    const rows = t.keys.map(function (k) {
+      const v = tally[k];
+      return '<div class="tally"><b>' + (+k.slice(8)) + '</b>' +
+        '<label>Д<input type="number" min="0" inputmode="numeric" data-tally="' + k + '" data-f="d" value="' + (+v.d || 0) + '"></label>' +
+        '<label>М<input type="number" min="0" inputmode="numeric" data-tally="' + k + '" data-f="m" value="' + (+v.m || 0) + '"></label>' +
+        (v.manual ? '<span class="muted">поправлено</span>' : '') +
+        '<button class="btn small" data-act="tallyDel" data-k="' + k + '" aria-label="Убрать день">✕</button></div>';
+    }).join('');
+    return '<div class="card"><h2>Газели за месяц</h2>' +
+      '<div class="row tmonth"><button class="btn small" data-act="tallyMonth" data-v="-1" aria-label="Прошлый месяц">‹</button><b>' + esc(title.charAt(0).toUpperCase() + title.slice(1)) + ' ' + p[0] + '</b><button class="btn small" data-act="tallyMonth" data-v="1" aria-label="Следующий месяц">›</button></div>' +
+      '<div class="muted">Сколько газелей с людьми было у Димы (Д) и у Миши (М). День записывается сам, пока его не поправили руками. Машины и «заявки нет» не считаются.</div>' +
+      (rows || '<div class="muted">В этом месяце пока пусто.</div>') +
+      '<div class="total">Итого: Д <b>' + t.d + '</b>, М <b>' + t.m + '</b>' + (t.d !== t.m ? ' · ' + (t.d > t.m ? 'Миша' : 'Дима') + ' отстаёт на ' + Math.abs(t.d - t.m) : '') + '</div>' +
+      '<div class="row"><input type="date" id="tallyAdd" style="width:auto"><button class="btn" data-act="tallyAdd">Добавить день</button><button class="btn" data-act="tallyCopy">Скопировать текстом</button></div>' +
+      '<div id="tallyMsg" class="muted" role="status"></div></div>';
   }
 
   function previewHtml() {
@@ -919,10 +973,10 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     let h = '<div class="date">' + esc(dateTitle()) + '</div><table><tr><td>№</td>';
     gs.forEach(function (g, i) {
       const hours = C.hh(C.gz(day, g, 'start')) + '-' + C.hh(C.gz(day, g, 'end')) + ' р.д.';
-      h += '<td><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', ' + (g.vehicle === 'машина' ? esc((String(g.carName || '').trim() || 'машина') + ' ' + String(g.number || '').trim()) : 'газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '')) + ' (' + (+g.capacity || 0) + 'м)</div>' +
+      h += '<td' + (g.noOrder ? ' class="off"' : '') + '><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', ' + (g.vehicle === 'машина' ? esc((String(g.carName || '').trim() || 'машина') + ' ' + String(g.number || '').trim()) : 'газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '')) + ' (' + (+g.capacity || 0) + 'м)</div>' +
         '<div class="red">выезд в ' + esc(C.gz(day, g, 'departure')) + '.</div>' +
         '<div class="h">Оплата ' + esc(window.Gen.payText(day, g)) + '. ' + hours + ' ' + esc(window.Gen.workText(day, g)) + '</div>' +
-        '<div class="red">' + esc(C.gz(day, g, 'reminder')) + '</div></td>';
+        (g.noOrder ? '<div class="h on">ЗАЯВКИ В ЦЕХ ПОКА НЕТ!!!</div>' : '<div class="red">' + esc(C.gz(day, g, 'reminder')) + '</div>') + '</td>';
     });
     h += '</tr>';
     for (let r = 1; r <= maxRows; r++) {
@@ -937,15 +991,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
             const k = C.kindOf(g, p), prev = list[r - 2];
             if (!prev || C.kindOf(g, prev) !== k) t = (k === 'Цех' ? 'ЦЕХ: ' : 'Поле: ') + t;
           }
-          c = p.status === 'noshow' ? '<mark>' + t + '</mark>' : t;
-        } else if (r <= cap) c = '<mark>СВОБОДНОЕ МЕСТО</mark>';
+          c = g.noOrder ? '<span class="offt">' + t + '</span>' : p.status === 'noshow' ? '<mark>' + t + '</mark>' : t;
+        } else if (g.noOrder) c = '';
+        else if (r <= cap) c = '<mark>СВОБОДНОЕ МЕСТО</mark>';
         else if (r === Math.max(cap, list.length) + 1) c = '<i>' + esc(window.Gen.places(cap)) + '</i>';
         h += '<td>' + c + '</td>';
       });
       h += '</tr>';
     }
     h += '<tr><td></td>' + gs.map(function (g) {
-      return '<td style="font-size:10px">' + (g.vehicle === 'машина' ? '' : 'По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br>') + '<b>Остановки:</b><br>' +
+      return '<td style="font-size:10px"' + (g.noOrder ? ' class="off"' : '') + '>' + (g.vehicle === 'машина' ? '' : 'По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br>') + '<b>Остановки:</b><br>' +
         C.stopSummary(day, g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join('<br>') + '</td>';
     }).join('') + '</tr>';
     h += '<tr><td colspan="' + (gs.length + 1) + '" style="text-align:center"><div class="red">Замена поле: ' + esc(day.replaceField || '-') + '</div>' +
@@ -973,7 +1028,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     setTimeout(function () { if (renderLater && !editing()) { renderLater = false; render(); } }, 0);
   });
   function plainDay() { const d = JSON.parse(JSON.stringify(day)); delete d.example; return d; }
-  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)) }; }
+  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)), tally: JSON.parse(JSON.stringify(tally)) }; }
 
   async function initSync() {
     if (!(window.claude && window.claude.use)) return;
@@ -1057,8 +1112,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!fb) return;
     await fb.auth.signOut();
     // На чужом телефоне после выхода ничего не остаётся.
-    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
-    day = exampleDay(); book = {}; marks = {};
+    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY, TALLY_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    day = exampleDay(); book = {}; marks = {}; tally = {};
   }
   function loginHtml() {
     if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
@@ -1099,15 +1154,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
 
   function onRemoteBook(snap) {
-    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length) queueSync(); return; }
+    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length || Object.keys(tally).length) queueSync(); return; }
     const d = snap.data();
     if (d.rev === sync.bookRev) return;
-    const remote = { book: d.book || {}, marks: d.marks || {} };
-    const base = sync.bookBase || { book: {}, marks: {} };
-    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks) };
+    const remote = { book: d.book || {}, marks: d.marks || {}, tally: d.tally || {} };
+    const base = sync.bookBase || { book: {}, marks: {}, tally: {} };
+    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks), tally: C.mergeMap(base.tally, tally, remote.tally) };
     const changed = JSON.stringify(merged) !== JSON.stringify(remote);
-    book = merged.book; marks = merged.marks;
-    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks));
+    book = merged.book; marks = merged.marks; tally = merged.tally;
+    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally();
     sync.bookBase = JSON.parse(JSON.stringify(remote));
     sync.bookRev = d.rev;
     if (changed) queueSync();
@@ -1150,7 +1205,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       if (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase)) {
         const rev = C.uid() + C.uid();
         sync.bookRev = rev;
-        await sync.bookRef.set({ book: bp.book, marks: bp.marks, rev: rev, by: sync.me || '', at: Date.now() });
+        await sync.bookRef.set({ book: bp.book, marks: bp.marks, tally: bp.tally, rev: rev, by: sync.me || '', at: Date.now() });
         sync.bookBase = bp;
       }
       sync.err = '';
@@ -1312,6 +1367,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
     }
     else if (act === 'gContact' && t.value) { day.gazelles[+t.dataset.i].contact = C.accusative(C.personLabel(person(t.value))); }
+    else if (t.dataset.tally) {
+      const k = t.dataset.tally, v = tally[k] || { d: 0, m: 0 };
+      v[t.dataset.f] = Math.max(0, parseInt(t.value, 10) || 0); v.manual = true;
+      tally[k] = v; saveTally(); queueSync(); render(); return;
+    }
     else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); return; }
     else return;
     save(); render();
@@ -1389,12 +1449,40 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         break;
       case 'exportJson': {
         const name = 'den_' + dateShort().replace('.', '_') + '_' + C.translit(day.brigadier || 'brigada') + '.json';
-        const data = Object.assign({}, day, { phonebook: book, marks: marks });
+        const data = Object.assign({}, day, { phonebook: book, marks: marks, tally: tally });
         await offer(name, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
         return;
       }
       case 'importJson': document.getElementById('fileOpen').click(); return;
+      case 'tallyMonth': {
+        const ym = (tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7)).split('-');
+        const nd = new Date(+ym[0], +ym[1] - 1 + (+b.dataset.v), 1);
+        tallyMonth = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1);
+        render(); return;
+      }
+      case 'tallyDel': delete tally[b.dataset.k]; saveTally(); queueSync(); render(); return;
+      case 'tallyAdd': {
+        const v = (document.getElementById('tallyAdd') || {}).value || '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+        if (!tally[v]) tally[v] = { d: 0, m: 0, manual: true };
+        tallyMonth = v.slice(0, 7); saveTally(); queueSync(); render(); return;
+      }
+      case 'tallyCopy': {
+        const ym = tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
+        const m = document.getElementById('tallyMsg');
+        try { await navigator.clipboard.writeText(C.tallyText(tally, ym).text); if (m) m.textContent = 'Скопировано.'; }
+        catch (err) { if (m) m.textContent = 'Не получилось скопировать.'; }
+        return;
+      }
       case 'gKind': day.gazelles[i].kind = b.dataset.v; break;
+      case 'gLetter': { const g = day.gazelles[i]; g.letter = C.owner(g) === b.dataset.v ? '' : b.dataset.v; break; }
+      case 'gNoOrder': day.gazelles[i].noOrder = !day.gazelles[i].noOrder; break;
+      case 'replaceFill': {
+        const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
+        const names = function (k) { const l = none.filter(function (p) { return (p.kind === 'цех') === (k === 'цех'); }).map(C.personLabel); return l.length ? l.join(', ') : '-'; };
+        day.replaceField = names('поле'); day.replaceShop = names('цех');
+        break;
+      }
       case 'gVehicle': {
         const g = day.gazelles[i];
         if ((g.vehicle || 'газель') === b.dataset.v) return;
@@ -1519,8 +1607,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         saveBook();
         Object.assign(marks, day.marks || {});
         safeSet(MARKS_KEY, JSON.stringify(marks));
+        Object.keys(day.tally || {}).forEach(function (k) { if (!tally[k] || !tally[k].manual) tally[k] = day.tally[k]; });
+        saveTally();
         delete day.phonebook;
         delete day.marks;
+        delete day.tally;
         day.example = false; save(); tab = 'people'; render();
       }
       catch (err) { parseReport = '<div class="note">Это не файл дня: ' + esc(err.message) + '</div>'; render(); }
