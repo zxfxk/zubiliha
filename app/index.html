@@ -156,6 +156,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   let tab = safeGet(TAB_KEY) || 'people';
   const openRows = new Set();
   let parseReport = null;
+  let assignReport = null;
   let pendingConfirm = null;
 
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -360,7 +361,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
       '</div>' +
       '<div class="card"><details><summary>Справочник остановок</summary>' +
-      '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны. Порядок строк — порядок в сводке.</p>' +
+      '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны: по зонам раскладываются газели. Зона, где в названии есть «деревни» или «любую», идёт в любую газель. Порядок строк — порядок маршрута и сводки.</p>' +
       '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
       '<label class="row" style="display:flex"><input type="checkbox" data-path="latinNames" style="width:auto" ' + (day.latinNames ? 'checked' : '') + '> Имена файлов латиницей</label>' +
       '</details></div>' +
@@ -451,6 +452,8 @@ details > summary { cursor: pointer; font-weight: 600; }
     const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
 
+    if (day.people.some(function (p) { return p.status !== 'refused'; })) h += assignCard(none.length);
+
     if (none.length || !day.people.length) {
       h += '<div class="card"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
       if (none.length) {
@@ -488,6 +491,42 @@ details > summary { cursor: pointer; font-weight: 600; }
     }
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
+  }
+
+  // Карточка автораспределения по зонам из справочника остановок.
+  function assignCard(noneCount) {
+    const vans = day.gazelles.filter(function (g) { return g.vehicle !== 'машина'; });
+    const inVans = day.people.some(function (p) { return p.status !== 'refused' && vans.some(function (g) { return g.id === p.gazId; }); });
+    let h = '<div class="card"><h2>Распределить по газелям</h2>';
+    if (!vans.length) return h + '<div class="muted">Сначала добавьте газели на вкладке «Газели».</div></div>';
+    h += '<div class="muted">По зонам из справочника остановок: каждая зона в свою газель, деревни вместе, цех в цеховую или сборную. Машины не трогаю. Потом можно поправить руками.</div>';
+    if (pendingConfirm === 'assignAll') {
+      h += '<div class="note">Все люди в газелях будут разложены заново, ручные перестановки пропадут.</div>' +
+        '<div class="confirm"><button class="btn danger" data-act="assign" data-v="all" data-yes="1">Разложить всех заново</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>';
+    } else if (inVans) {
+      h += '<div class="row">' + (noneCount ? '<button class="btn primary" data-act="assign" data-v="free">Разложить тех, кто без газели (' + noneCount + ')</button>' : '') +
+        '<button class="btn" data-act="assign" data-v="all">Всех заново</button></div>';
+    } else {
+      h += '<div class="row"><button class="btn primary" data-act="assign" data-v="all">Разложить</button></div>';
+    }
+    return h + (assignReport || '') + '</div>';
+  }
+
+  function assignSummary(r) {
+    const lines = r.vans.map(function (v) {
+      const n = C.peopleOf(day, v.g).length;
+      const z = v.zones.map(function (x) { return esc(x.zone.replace(/:.*/, '')) + ' — ' + x.count; }).join(', ');
+      return '<li>' + esc(gTitle(v.g)) + ': ' + (n ? n + ' чел.' + (z ? ' (' + z + ')' : '') : 'пустая, можно убрать') +
+        (v.zones.filter(function (x) { return !/деревн|любую/i.test(x.zone); }).length > 1 ? ' <b>— тут разные зоны</b>' : '') + '</li>';
+    });
+    let h = '<div class="note">Разложил ' + r.placed + ' чел.<ul>' + lines.join('') + '</ul>';
+    if (r.left.length) {
+      const shop = r.left.filter(function (p) { return p.kind === 'цех'; }).length;
+      const noShopVan = !day.gazelles.some(function (g) { return g.vehicle !== 'машина' && (g.kind === 'Цех' || g.kind === 'Цех/поле'); });
+      h += '<b>Не хватило мест: ' + r.left.length + ' чел.</b> Они в «Без газели».' +
+        (shop && noShopVan ? ' Для цеха нет газели «Цех» или «Цех/поле».' : ' Добавьте газель или машину.');
+    }
+    return h + '</div>';
   }
 
   function dateShort() { const dp = C.dateParts(day.date); return dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : ''; }
@@ -817,7 +856,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       case 'newDay':
         if (!yes) { pendingConfirm = 'newDay'; break; }
         pendingConfirm = null;
-        day.people = []; day.example = false;
+        day.people = []; day.example = false; assignReport = null;
         { const dp = C.dateParts(day.date); const nd = dp ? new Date(dp.y, dp.m - 1, dp.d + 1) : new Date(Date.now() + 86400000);
           day.date = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1) + '-' + C.pad2(nd.getDate()); }
         day.gazelles.forEach(function (g) { g.contact = ''; });
@@ -841,6 +880,15 @@ details > summary { cursor: pointer; font-weight: 600; }
       }
       case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; day.gazelles.push(g); break; }
       case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'assign': {
+        const mode = b.dataset.v;
+        const vans = day.gazelles.filter(function (g) { return g.vehicle !== 'машина'; });
+        const inVans = day.people.some(function (p) { return p.status !== 'refused' && vans.some(function (g) { return g.id === p.gazId; }); });
+        if (mode === 'all' && inVans && !yes) { pendingConfirm = 'assignAll'; break; }
+        pendingConfirm = null;
+        assignReport = assignSummary(C.autoAssign(day, stopsList(), mode));
+        break;
+      }
       case 'pKind': { const p = person(id); p.kind = p.kind === 'цех' ? 'поле' : 'цех'; break; }
       case 'pMore': if (openRows.has(id)) openRows.delete(id); else openRows.add(id); render(); return;
       case 'gUp': case 'gDown': {
@@ -855,6 +903,7 @@ details > summary { cursor: pointer; font-weight: 600; }
         { const gid = day.gazelles[i].id; day.people.forEach(function (p) { if (p.gazId === gid) p.gazId = ''; }); day.gazelles.splice(i, 1); }
         break;
       case 'parse': {
+        assignReport = null;
         const text = document.getElementById('vkText').value;
         const dp = C.dateParts(day.date);
         if (!dp) { parseReport = '<div class="note">Сначала укажите дату на вкладке «День».</div>'; break; }

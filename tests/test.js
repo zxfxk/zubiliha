@@ -113,5 +113,44 @@ assert.deepStrictEqual(C.fileNames(day), {
   assert.strictEqual(r2.people[0].stop, 'Рынок');
   assert.deepStrictEqual(r2.people[0].flags, []);
 
+  // Этап 2: распределение по зонам.
+  {
+    const mk = (spec) => {
+      const d = C.newDay(); d.people = []; let n = 0;
+      spec.forEach(([st, c, k, raw]) => { for (let i = 0; i < c; i++) d.people.push({ id: 'a' + n, surname: 'Тест' + (n++), initial: 'А', stop: st, kind: k || 'поле', status: 'ok', gazId: '', raw: raw || '' }); });
+      return d;
+    };
+    const zonesOf = (r) => r.vans.map((v) => v.zones.map((z) => z.zone.replace(/:.*/, '') + ':' + z.count).join(','));
+    // Две зоны в две газели, деревни к людям, а не в пустую третью.
+    let d = mk([['Рынок', 12], ['Художка', 8], ['Зименки', 3]]);
+    let r = C.autoAssign(d, stops, 'all');
+    assert.deepStrictEqual(zonesOf(r), ['зона 1:12', 'зона 2:8,деревни:3', '']);
+    assert.strictEqual(r.left.length, 0);
+    // Цех — в сборную газель, поле по зонам; машина не трогается.
+    d = mk([['Рынок', 10], ['Стекляшка', 10], ['Пурех 5ка', 3, 'цех']]);
+    d.gazelles[2].kind = 'Цех/поле';
+    const car = C.newGazelle(); car.vehicle = 'машина'; car.capacity = 5; d.gazelles.push(car);
+    d.people.push({ id: 'drv', surname: 'Водитель', initial: 'В', stop: 'Рынок', kind: 'поле', status: 'ok', gazId: car.id, driver: true });
+    r = C.autoAssign(d, stops, 'all');
+    assert.strictEqual(d.people.find((p) => p.id === 'drv').gazId, car.id);
+    assert.ok(d.people.filter((p) => p.kind === 'цех').every((p) => p.gazId === d.gazelles[2].id));
+    assert.strictEqual(r.left.length, 0);
+    // Не хватает мест — лишние остаются без газели; одна строка ВК не делится.
+    d = mk([['Рынок', 18], ['Художка', 2, 'поле', 'строка'], ['Художка', 19]]);
+    d.gazelles = d.gazelles.slice(0, 2);
+    r = C.autoAssign(d, stops, 'all');
+    assert.strictEqual(r.left.length, 1);
+    const pair = d.people.filter((p) => p.raw === 'строка');
+    assert.strictEqual(pair[0].gazId, pair[1].gazId);
+    // Только без газели: остальные остаются на местах, новый — к своей зоне.
+    d = mk([['Рынок', 5], ['Художка', 5]]);
+    C.autoAssign(d, stops, 'all');
+    const before = d.people.map((p) => p.gazId);
+    d.people.push({ id: 'new', surname: 'Новый', initial: 'Н', stop: 'Стекляшка', kind: 'поле', status: 'ok', gazId: '' });
+    C.autoAssign(d, stops, 'free');
+    assert.deepStrictEqual(d.people.slice(0, 10).map((p) => p.gazId), before);
+    assert.strictEqual(d.people.find((p) => p.id === 'new').gazId, d.people.find((p) => p.stop === 'Художка').gazId);
+  }
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });
