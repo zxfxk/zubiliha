@@ -122,6 +122,34 @@ details > summary { cursor: pointer; font-weight: 600; }
 .namerow { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .namerow input { flex: 1; min-width: 0; }
 details.backup { margin-top: 12px; }
+/* Компьютер: шире, крупнее, карточки в колонки. На телефоне ничего не меняется. */
+@media (min-width: 1000px) {
+  body { font-size: 16px; }
+  .wrap { max-width: 1360px; padding-inline: 32px; }
+  header.top { margin-inline: -32px; padding-inline: 32px; padding-block: 14px; }
+  .top h1 { font-size: 22px; }
+  .top .sub { font-size: 14px; }
+  nav.tabs { grid-template-columns: repeat(5, minmax(120px, 180px)); justify-content: center; }
+  nav.tabs button { font-size: 14px; padding: 14px 4px 16px; }
+  section { gap: 18px; padding-top: 18px; }
+  h2 { font-size: 17px; }
+  .card { padding: 16px 18px; }
+  .muted, .flag, .stops, .phone { font-size: 14px; }
+  .btn.small { font-size: 14px; }
+  .person .line1 { grid-template-columns: 28px 1.2fr 1fr 64px; }
+  .person .line2, .flag, .phone, .more { padding-left: 34px; }
+  /* «День»: две колонки, свёрнутые блоки — во всю ширину. */
+  main[data-tab="day"] section { grid-template-columns: 1fr 1fr; align-items: start; }
+  main[data-tab="day"] section > .card:has(> details) { grid-column: 1 / -1; }
+  /* «Газели» и «Люди»: карточки газелей в 2–3 колонки, остальное во всю ширину. */
+  main[data-tab="gaz"] section { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); align-items: start; }
+  main[data-tab="people"] section { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); align-items: start; }
+  main[data-tab="gaz"] section > :not(.gcard), main[data-tab="people"] section > :not(.gcard) { grid-column: 1 / -1; }
+  main section:has(> .banner) { grid-template-columns: 1fr; }
+  main[data-tab="files"] section, main[data-tab="issues"] section { max-width: 1100px; }
+  .preview:not(.shotsrc) table { font-size: 13px; }
+  .preview:not(.shotsrc) .date { font-size: 15px; }
+}
 .hist { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted, inherit); }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -385,6 +413,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     });
     if (login.need) { $main.innerHTML = loginHtml(); updateTop(); return; }
     const html = ({ day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles, issues: renderIssues }[tab] || renderPeople)();
+    $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
     updateTop();
   }
@@ -504,7 +533,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const n = C.peopleOf(day, g).length;
       const over = n > (+g.capacity || 0);
       const pre = 'gazelles.' + i + '.';
-      h += '<div class="card">' +
+      h += '<div class="card gcard">' +
         '<div class="ghead"><h2>' + esc(gTitle(g)) + '</h2><span class="count' + (over ? ' over' : '') + '">' + n + ' / ' + (+g.capacity || 0) + '</span></div>' +
         '<div class="row"><div class="seg" role="group" aria-label="Куда едет">' +
         ['Поле', 'Цех', 'Цех/поле'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
@@ -569,7 +598,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     h += sortCard();
 
     if (none.length || !day.people.length) {
-      h += '<div class="card"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
+      h += '<div class="card gcard"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
       if (none.length) {
         h += '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="">А–Я</button><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
           day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') + '</select></div>';
@@ -584,7 +613,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const cap = +x.g.capacity || 0;
       const n = x.list.length;
       const sum = C.stopSummary(day, x.g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join(' · ');
-      h += '<div class="card"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
+      h += '<div class="card gcard"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
         seatHint(x.g, n, cap, stops) +
