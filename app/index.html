@@ -89,9 +89,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .num { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: 14px; }
 .person.noshow .pname { background: var(--marker); color: var(--marker-fg); }
 .person.refused .pname, .person.refused .pstop { text-decoration: line-through; color: var(--muted); }
-.person .line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
-.person .line2 .seg button { padding: 7px 8px; font-size: 12px; }
-.person .line2 .spacer { flex: 1; }
+.person .line2 { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
+.person .line2 .seg button { padding: 7px 6px; font-size: 12px; }
+.person .line2 .ptail { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; }
 .sorthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .sorthead .btn { flex: none; }
 .chip[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
@@ -109,7 +109,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .linkbtn { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; padding: 0 2px; }
 .person .line2 .iconbtn { width: 28px; height: 30px; font-size: 14px; }
 .person .line2 .btn.small { padding: 6px 9px; font-size: 12px; }
-.person .line2 .chip { padding: 5px 8px; font-size: 11px; }
+.person .line2 .chip { padding: 5px 7px; font-size: 11px; }
+.ptel { font-size: 12px; letter-spacing: -.01em; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; align-items: center; gap: 2px; }
+.ptel a { color: var(--accent); text-decoration: none; }
+.ptel .linkbtn { text-decoration: none; font-size: 13px; padding: 2px 3px; }
 @media (max-width: 480px) { .person .line2 { padding-left: 0; gap: 5px; } .person .line2 .seg button { padding: 7px 7px; } }
 .sublabel { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); padding-top: 4px; }
 .iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; width: 34px; height: 32px; font-size: 15px; }
@@ -828,12 +831,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
 
   function dateShort() { const dp = C.dateParts(day.date); return dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : ''; }
 
-  function personMeta(p) {
-    const g = gById(p.gazId);
-    const bits = [];
-    if (p.phone && !openRows.has(p.id)) bits.push('☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>' +
-      ' <button class="linkbtn" data-act="pPhone" data-id="' + p.id + '">изменить</button>');
-    return bits.length ? '<div class="phone">' + bits.join(' ') + '</div>' : '';
+  // Телефон стоит в строке статуса, справа, рядом с «Удалить», чтобы строка человека не росла в высоту.
+  function phoneInline(p) {
+    if (!p.phone || openRows.has(p.id)) return '';
+    return '<span class="ptel"><a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>' +
+      '<button class="linkbtn" data-act="pPhone" data-id="' + p.id + '" aria-label="Изменить телефон" title="Изменить телефон">✎</button></span>';
   }
 
   // Кто-то из газели отказался и есть свободные места: кого можно посадить.
@@ -889,7 +891,6 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
       '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
       day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') + '</select></div>' +
-      personMeta(p) +
       '<div class="line2">' +
       '<div class="seg" role="group" aria-label="Статус">' +
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
@@ -902,11 +903,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
       '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
       (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
-      '<span class="spacer"></span>' +
+      // Телефон и «Удалить» переносятся вместе и прижаты вправо.
+      '<span class="ptail">' + phoneInline(p) +
       (pendingConfirm === 'pDel' + p.id
         ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
         : '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button>') +
-      '</div>' +
+      '</span></div>' +
       (openRows.has(p.id)
         ? '<div class="more"><input type="tel" class="pphone" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off"></div>'
         : '') +
