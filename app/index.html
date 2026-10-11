@@ -122,6 +122,7 @@ details > summary { cursor: pointer; font-weight: 600; }
 .namerow { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .namerow input { flex: 1; min-width: 0; }
 details.backup { margin-top: 12px; }
+.hist { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted, inherit); }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .banner { border: 1px dashed var(--accent); border-radius: var(--r); padding: 12px; display: grid; gap: 8px; }
@@ -207,7 +208,33 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); queueSync(); }
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); updateTop(); queueSync(); }
+
+  // История дня на этом телефоне: копия перед опасными действиями, перед чужой большой правкой и раз в 15 минут.
+  const HIST_KEY = 'zubilikha_history_v1';
+  const HIST_MAX = 20;
+  function loadHist() { try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]') || []; } catch (e) { return []; } }
+  function keep(why, d) {
+    d = d || day;
+    if (!d || d.example || !(d.people || []).length) return;
+    const h = loadHist();
+    const json = JSON.stringify(d);
+    if (h.length && JSON.stringify(h[h.length - 1].day) === json) return;
+    h.push({ at: Date.now(), why: why, day: JSON.parse(json) });
+    while (h.length > HIST_MAX) h.shift();
+    // Если память переполнена, выкидываю старые копии.
+    while (h.length) { try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); return; } catch (e) { h.shift(); } }
+  }
+  function autoKeep() {
+    const h = loadHist();
+    if (!h.length || Date.now() - h[h.length - 1].at > 15 * 60000) keep('автокопия');
+  }
+  // Чужая правка, после которой пропадает много людей или меняется дата.
+  function bigDrop(before, after) {
+    if (!before || before.example) return false;
+    const n = function (d) { return (d.people || []).filter(function (p) { return p.status !== 'refused'; }).length; };
+    return before.date !== after.date || n(after) < n(before) - 2;
+  }
 
   // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
   const BOOK_KEY = 'zubilikha_phones_v1';
@@ -324,7 +351,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const dp = C.dateParts(day.date);
     return dp ? dp.d + ' ' + C.MONTHS_GEN[dp.m - 1] : 'без даты';
   }
-  function stopsList() { return C.parseStops(day.stopsText); }
+  let stopsCache = { text: null, list: [] };
+  function stopsList() {
+    if (stopsCache.text !== day.stopsText) stopsCache = { text: day.stopsText, list: C.parseStops(day.stopsText) };
+    return stopsCache.list;
+  }
 
   function updateTop() {
     if (login.need) { document.getElementById('title').textContent = 'Газели'; document.getElementById('subtitle').textContent = ''; return; }
@@ -397,7 +428,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '</div>' +
 
       syncCard() +
-      dayFileCard() +
+      dayFileCard() + historyCard() +
       '<div class="card"><details><summary>Справочник остановок</summary>' +
       '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны: по зонам раскладываются газели. Зона, где в названии есть «деревни» или «любую», идёт в любую газель. Порядок строк — порядок маршрута и сводки.</p>' +
       '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
@@ -413,7 +444,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       return '<div class="card"><h2>Новый день</h2>' +
         confirmBlock('newDay', 'Новый день', 'Список людей очистится у всех, кто вошёл: газели и настройки останутся, дата сдвинется на следующий день.', 'Очистить список') +
         '<details class="backup"><summary>Резервная копия файлом</summary>' +
-        '<div class="muted">На случай, если общая база не откроется. В файл попадает и телефонная книжка.</div>' + files + '</details>' +
+        '<div class="muted">Вся общая база одним файлом: день, телефоны и отметки. На случай, если база не откроется.</div>' + files + '</details>' +
         '</div>';
     }
     return '<div class="card"><h2>Файл дня</h2>' +
@@ -421,6 +452,25 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       files +
       confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
       '</div>';
+  }
+
+  function historyCard() {
+    const h = loadHist();
+    if (!h.length) return '';
+    const rows = h.map(function (x, i) { return { x: x, i: i }; }).reverse().map(function (r) {
+      const x = r.x, i = r.i;
+      const n = (x.day.people || []).filter(function (p) { return p.status !== 'refused'; }).length;
+      const dp = C.dateParts(x.day.date);
+      const info = fmtAt(new Date(x.at).toISOString()) + ' · ' + esc(x.why) + ' · день ' + (dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : '?') + ', ' + n + ' чел.';
+      if (pendingConfirm === 'histBack' + i) {
+        return '<div class="hist"><div>' + info + '</div><div class="note">Текущий день заменится этой копией' + (sync.on ? ' у всех, кто вошёл' : '') + '. Сам текущий день тоже сохранится в истории.</div>' +
+          '<div class="confirm"><button class="btn danger" data-act="histBack" data-i="' + i + '" data-yes="1">Вернуть</button><button class="btn" data-act="cancelConfirm">Отмена</button></div></div>';
+      }
+      return '<div class="hist"><div>' + info + '</div><button class="btn small" data-act="histBack" data-i="' + i + '">Вернуть как было</button></div>';
+    }).join('');
+    return '<div class="card"><details' + (/^histBack/.test(pendingConfirm || '') ? ' open' : '') + '><summary>История дня (' + h.length + ')</summary>' +
+      '<div class="muted">Копии хранятся на этом телефоне: перед «Новый день», открытием файла, раскладкой заново, удалением, перед большой правкой второго человека и раз в 15 минут.</div>' +
+      rows + '</details></div>';
   }
 
   function confirmBlock(act, label, text, yes) {
@@ -537,6 +587,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       h += '<div class="card"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
+        seatHint(x.g, n, cap, stops) +
         (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button></div>' : '') +
         x.list.map(function (p, i) {
           let label = '';
@@ -612,10 +663,49 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     return bits.length ? '<div class="phone">' + bits.join(' ') + '</div>' : '';
   }
 
+  // Кто-то из газели отказался и есть свободные места: кого можно посадить.
+  // Сначала те, кто без газели, с той же остановки, потом из той же зоны; если таких нет — лишние из переполненных газелей.
+  function seatHint(g, n, cap, stops) {
+    const free = cap - n;
+    if (free <= 0 || g.vehicle === 'машина') return '';
+    const gone = day.people.filter(function (p) { return p.gazId === g.id && p.status === 'refused'; });
+    if (!gone.length) return '';
+    const fits = function (p) { return g.kind === 'Цех/поле' || (g.kind === 'Цех') === (p.kind === 'цех'); };
+    const goneStops = gone.map(function (p) { return p.stop; });
+    const goneZones = gone.map(function (p) { const si = C.stopInfo(p.stop, stops); return si ? si.zone : ''; }).filter(Boolean);
+    const rank = function (p) {
+      if (goneStops.indexOf(p.stop) >= 0) return 0;
+      const si = C.stopInfo(p.stop, stops);
+      return si && goneZones.indexOf(si.zone) >= 0 ? 1 : 2;
+    };
+    let cands = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused' && fits(p); });
+    let from = '';
+    if (!cands.length) {
+      day.gazelles.forEach(function (o) {
+        if (o === g || o.vehicle === 'машина') return;
+        const list = C.peopleOf(day, o);
+        const extra = list.length - (+o.capacity || 0);
+        if (extra > 0) cands = cands.concat(list.slice(-extra).filter(fits));
+      });
+      from = ' из переполненных газелей';
+    }
+    if (!cands.length) return '';
+    cands = cands.map(function (p, i) { return { p: p, r: rank(p), i: i }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; }).slice(0, 6).map(function (x) { return x.p; });
+    return '<div class="note">Отказ: ' + esc(gone.map(C.personLabel).join(', ')) + '. Свободно мест: ' + free + '. Можно посадить' + from + ':' +
+      '<div class="row">' + cands.map(function (p) {
+        return '<button class="btn small" data-act="pSeat" data-id="' + p.id + '" data-g="' + g.id + '">+ ' + esc(C.personLabel(p)) + (p.stop ? ' · ' + esc(p.stop) : '') + '</button>';
+      }).join('') + '</div></div>';
+  }
+
   function personRow(p, n) {
     const flags = (p.flags || []).length
       ? '<div class="flag">⚠ ' + esc(p.flags.join('; ')) + (p.raw ? ' <code>«' + esc(p.raw) + '»</code>' : '') +
         ' <button class="btn small" data-act="pOk" data-id="' + p.id + '">Всё верно</button></div>'
+      : '';
+    const sug = p.stop ? C.suggestStop(p.stop, stopsList()) : null;
+    const stopHint = sug
+      ? '<div class="flag">Остановки «' + esc(p.stop) + '» нет в справочнике. <button class="btn small" data-act="pStopFix" data-id="' + p.id + '" data-v="' + esc(sug) + '">Может, ' + esc(sug) + '?</button></div>'
       : '';
     const st = p.status || 'ok';
     const g = gById(p.gazId);
@@ -646,7 +736,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           '<div class="more">' +
           '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button></div>'
         : '') +
-      flags + '</div>';
+      stopHint + flags + '</div>';
   }
 
   // ---------- Что не так ----------
@@ -903,7 +993,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!fb) return;
     await fb.auth.signOut();
     // На чужом телефоне после выхода ничего не остаётся.
-    try { [KEY, BOOK_KEY, MARKS_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
     day = exampleDay(); book = {}; marks = {};
   }
   function loginHtml() {
@@ -934,7 +1024,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const remote = migrate(JSON.parse(JSON.stringify(d.day || {})));
     const mine = plainDay();
     const changed = sync.base && !day.example ? JSON.stringify(mine) !== JSON.stringify(sync.base) : false;
-    day = changed ? migrate(C.mergeDay(sync.base, mine, remote)) : remote;
+    const next = changed ? migrate(C.mergeDay(sync.base, mine, remote)) : remote;
+    if (bigDrop(day, next)) keep('перед правкой ' + (sync.byName && sync.byName !== 'вы' ? sync.byName : 'второго человека'));
+    day = next;
     sync.base = JSON.parse(JSON.stringify(remote));
     sync.rev = d.rev;
     safeSet(KEY, JSON.stringify(day));
@@ -1168,6 +1260,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const yes = b.dataset.yes === '1';
     switch (act) {
       case 'startOwn': {
+        keep('перед «Начать свой день»');
         day = C.newDay();
         const ps = prevSnap();
         if (ps) applySnap(ps);
@@ -1203,9 +1296,19 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         return;
       }
       case 'cancelConfirm': pendingConfirm = null; break;
+      case 'histBack': {
+        if (!yes) { pendingConfirm = 'histBack' + i; break; }
+        pendingConfirm = null;
+        const h = loadHist()[i];
+        if (!h) break;
+        keep('перед возвратом');
+        day = migrate(h.day); day.example = false; assignReport = null;
+        break;
+      }
       case 'newDay':
         if (!yes) { pendingConfirm = 'newDay'; break; }
         pendingConfirm = null;
+        keep('перед «Новый день»');
         day.people = []; day.example = false; assignReport = null;
         { const dp = C.dateParts(day.date); const nd = dp ? new Date(dp.y, dp.m - 1, dp.d + 1) : new Date(Date.now() + 86400000);
           day.date = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1) + '-' + C.pad2(nd.getDate()); }
@@ -1243,6 +1346,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         const inVans = day.people.some(function (p) { return p.status !== 'refused' && vans.some(function (g) { return g.id === p.gazId; }); });
         if (mode === 'all' && inVans && !yes) { pendingConfirm = 'assignAll'; break; }
         pendingConfirm = null;
+        if (mode === 'all') keep('перед «Разложить всех заново»');
         assignReport = assignSummary(C.autoAssign(day, stopsList(), mode));
         break;
       }
@@ -1257,6 +1361,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'gDel':
         if (!yes) { pendingConfirm = 'gDel' + i; break; }
         pendingConfirm = null;
+        keep('перед удалением газели');
         { const gid = day.gazelles[i].id; day.people.forEach(function (p) { if (p.gazId === gid) p.gazId = ''; }); day.gazelles.splice(i, 1); }
         break;
       case 'parse': {
@@ -1296,8 +1401,19 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'pStatus': { const p = person(id); const was = p.status; p.status = b.dataset.v; if ((was === 'refused') !== (p.status === 'refused')) toEnd(p); break; }
       case 'pUp': moveWithin(person(id), -1); break;
       case 'pDown': moveWithin(person(id), 1); break;
-      case 'pDel': day.people.splice(day.people.indexOf(person(id)), 1); break;
+      case 'pDel': keep('перед удалением ' + C.personLabel(person(id))); day.people.splice(day.people.indexOf(person(id)), 1); break;
       case 'pOk': person(id).flags = []; break;
+      case 'pStopFix': {
+        const p = person(id);
+        p.stop = b.dataset.v;
+        p.flags = (p.flags || []).filter(function (f) { return f !== 'остановка не распознана'; });
+        break;
+      }
+      case 'pSeat': {
+        const p = person(id);
+        p.gazId = b.dataset.g; toEnd(p);
+        break;
+      }
       case 'shotCopy':
         b.disabled = true;
         copyShot().catch(function (err) { shotSay('Не получилось: ' + err.message); }).finally(function () { b.disabled = false; });
@@ -1323,7 +1439,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const rd = new FileReader();
     rd.onload = function () {
       try {
-        day = migrate(JSON.parse(rd.result));
+        const opened = migrate(JSON.parse(rd.result));
+        keep('перед «Открыть файл дня»');
+        day = opened;
         Object.assign(book, day.phonebook || {});
         saveBook();
         Object.assign(marks, day.marks || {});

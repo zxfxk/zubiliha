@@ -213,5 +213,30 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.deepStrictEqual(C.mergeMap({ x: 1, y: 2 }, { x: 1 }, { x: 1, y: 2, z: 3 }), { x: 1, z: 3 });
   }
 
+  // Похожие люди и подсказка остановки.
+  {
+    const d = C.newDay();
+    d.people = [
+      { surname: 'Тестов', initial: 'А', status: 'ok', gazId: d.gazelles[0].id },
+      { surname: 'Тестов', initial: 'А', status: 'ok', gazId: '' },
+      { surname: 'Сидорев', initial: 'В', status: 'ok', gazId: '' },
+      { surname: 'Сидоров', initial: 'В', status: 'ok', gazId: '' },
+      { surname: 'Пробов', initial: 'Б', status: 'ok', gazId: '' },
+      { surname: 'Пробова', initial: 'Б', status: 'ok', gazId: '' },
+      { surname: 'Отказов', initial: 'Г', status: 'refused', gazId: '' },
+      { surname: 'Отказов', initial: 'Г', status: 'ok', gazId: '' },
+    ];
+    const dups = C.duplicates(d);
+    assert.strictEqual(dups.length, 2, dups.join('\n'));
+    assert.ok(dups[0].startsWith('Повтор: Тестов А (Газель 1) и Тестов А (без газели)'));
+    assert.ok(/Сидорев В .* Сидоров В/.test(dups[1]));
+    assert.ok(C.warnings(d).some(function (x) { return x.startsWith('Повтор: Тестов А'); }));
+    const stops = C.parseStops(C.DEFAULT_STOPS);
+    assert.strictEqual(C.suggestStop('Рынак', stops), 'Рынок');
+    assert.strictEqual(C.suggestStop('Художк', stops), 'Художка');
+    assert.strictEqual(C.suggestStop('Рынок', stops), null);
+    assert.strictEqual(C.suggestStop('абвгдеж', stops), null);
+  }
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });
