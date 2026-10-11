@@ -107,6 +107,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .linkbtn { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; padding: 0 2px; }
 .person .line2 .iconbtn { width: 28px; height: 30px; font-size: 14px; }
 .person .line2 .btn.small { padding: 6px 9px; font-size: 12px; }
+.person .line2 .chip { padding: 5px 8px; font-size: 11px; }
 @media (max-width: 480px) { .person .line2 { padding-left: 0; gap: 5px; } .person .line2 .seg button { padding: 7px 7px; } }
 .sublabel { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); padding-top: 4px; }
 .iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; width: 34px; height: 32px; font-size: 15px; }
@@ -891,20 +892,19 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }).join('') + '</div>' +
       '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
       '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
+      // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
+      (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
+      (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
+      '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
+      (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
       '<span class="spacer"></span>' +
       (pendingConfirm === 'pDel' + p.id
         ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
         : '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button>') +
       '</div>' +
-      '<div class="more">' +
-      // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
-      (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
-      (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
-      '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
       (openRows.has(p.id)
-        ? '<input type="tel" class="pphone" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">'
-        : !p.phone ? '<button class="btn small" data-act="pPhone" data-id="' + p.id + '">Добавить телефон</button>' : '') +
-      '</div>' +
+        ? '<div class="more"><input type="tel" class="pphone" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off"></div>'
+        : '') +
       stopHint + flags + '</div>';
   }
 
