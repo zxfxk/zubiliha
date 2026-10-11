@@ -255,5 +255,22 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.deepStrictEqual(r.skipped.map(function (x) { return x.reason; }), ['другая дата']);
   }
 
+  // Цех без заявки: люди серым в Word, в Excel и подсчёт не идут. Подсчёт газелей Димы и Миши.
+  {
+    const d = C.newDay(); d.people = []; d.date = '2026-10-11';
+    const gs = d.gazelles;
+    while (gs.length < 3) gs.push(C.newGazelle());
+    gs[0].letter = 'Д'; gs[1].letter = 'м'; gs[2].letter = 'Д'; gs[2].kind = 'Цех'; gs[2].noOrder = true;
+    [0, 1, 2].forEach((i) => d.people.push({ id: 'n' + i, surname: 'Пробов' + i, initial: 'А', stop: 'Рынок', kind: 'поле', status: 'ok', gazId: gs[i].id }));
+    assert.strictEqual(C.owner(gs[1]), 'М');
+    assert.deepStrictEqual(C.wentPeople(d).map((x) => x.p.id), ['n0', 'n1']);
+    assert.deepStrictEqual(C.vanTally(d), { d: 1, m: 1 });
+    const xml = await (await JSZip.loadAsync(await D.Packer.toBuffer(Gen.buildWord(d, D)))).file('word/document.xml').async('string');
+    assert.ok(/ЗАЯВКИ В ЦЕХ ПОКА НЕТ/.test(xml));
+    assert.ok(/BFBFBF/.test(xml));
+    const t = C.tallyText({ '2026-10-01': { d: 1, m: 1 }, '2026-10-11': { d: 1, m: 2 }, '2026-09-30': { d: 5, m: 0 } }, '2026-10');
+    assert.strictEqual(t.text, 'Октябрь:\n1-1д/1м\n11-1д/2м\nИтого: Д 2, М 3');
+  }
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });

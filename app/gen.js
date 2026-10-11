@@ -5,6 +5,7 @@
   const Core = root.Core || (typeof require !== 'undefined' ? require('./core.js') : null);
 
   const RED = 'FF0000';
+  const GRAY = 'BFBFBF'; // «заявки в цех пока нет»: газель видна, но бледно
   const ARIAL = 'Arial';
 
   function places(n) {
@@ -52,20 +53,25 @@
       const hours = Core.hh(Core.gz(day, g, 'start')) + '-' + Core.hh(Core.gz(day, g, 'end')) + ' р.д.';
       const work = workText(day, g);
       const reminder = Core.gz(day, g, 'reminder');
-      const line3 = [run(['Оплата ' + dot(pay), hours, dot(work)].filter(Boolean).join(' ').replace(/\.$/, ''), { bold: true })];
-      if (reminder) {
+      const off = !!g.noOrder;
+      const B = off ? { bold: true, color: GRAY } : { bold: true };
+      const R = off ? B : { bold: true, color: RED };
+      const line3 = [run(['Оплата ' + dot(pay), hours, dot(work)].filter(Boolean).join(' ').replace(/\.$/, ''), B)];
+      if (reminder && !off) {
         line3.push(run('', { bold: true, break: 1 }));
-        line3.push(run(reminder, { bold: true, color: RED }));
+        line3.push(run(reminder, R));
       }
-      return cell([
+      const parts = [
         para([
-          run((i + 1) + '. ' + (g.kind || 'Поле') + ', ' + (g.vehicle === 'машина' ? (String(g.carName || '').trim() || 'машина') + ' ' : 'газель '), { bold: true }),
-          run((g.vehicle === 'машина' ? '' : '№') + String(g.number || '').trim(), { bold: true, size: 24 }),
-          run((letter ? ' ' + letter : '') + ' (' + (+g.capacity || 0) + 'м)', { bold: true }),
+          run((i + 1) + '. ' + (g.kind || 'Поле') + ', ' + (g.vehicle === 'машина' ? (String(g.carName || '').trim() || 'машина') + ' ' : 'газель '), B),
+          run((g.vehicle === 'машина' ? '' : '№') + String(g.number || '').trim(), Object.assign({ size: 24 }, B)),
+          run((letter ? ' ' + letter : '') + ' (' + (+g.capacity || 0) + 'м)', B),
         ]),
-        para([run('выезд в ' + dot(Core.gz(day, g, 'departure')), { bold: true, color: RED })]),
+        para([run('выезд в ' + dot(Core.gz(day, g, 'departure')), R)]),
         para(line3),
-      ], colW);
+      ];
+      if (off) parts.push(para([run('ЗАЯВКИ В ЦЕХ ПОКА НЕТ!!!', { bold: true, size: 24 })]));
+      return cell(parts, colW);
     }));
     const rows = [new TableRow({ children: head })];
 
@@ -87,7 +93,9 @@
             const prev = list[r - 2];
             if (!prev || Core.kindOf(g, prev) !== k) text = (k === 'Цех' ? 'ЦЕХ: ' : 'Поле: ') + text;
           }
-          p = para([run(text, person.status === 'noshow' ? { size: 20, highlight: 'yellow' } : { size: 20 })]);
+          p = para([run(text, g.noOrder ? { size: 20, color: GRAY } : person.status === 'noshow' ? { size: 20, highlight: 'yellow' } : { size: 20 })]);
+        } else if (g.noOrder) {
+          p = para([]);
         } else if (r <= cap) {
           p = para([run('СВОБОДНОЕ МЕСТО', { size: 20, highlight: 'yellow' })]);
         } else if (r === Math.max(cap, list.length) + 1) {
@@ -104,11 +112,12 @@
     const stopCells = [cell([para([])], numW)].concat(gs.map(function (g) {
       const contact = String(g.contact || '').trim();
       const ps = [];
+      const o = g.noOrder ? { color: GRAY } : {};
       // В машине всего несколько человек — отписываться по остановкам не нужно.
-      if (g.vehicle !== 'машина') ps.push(para([run('По остановкам прошу отписаться' + (contact ? ' – ' + contact : ''), { size: 18 })]));
-      ps.push(para([run('Остановки:', { size: 18, bold: true })]));
+      if (g.vehicle !== 'машина') ps.push(para([run('По остановкам прошу отписаться' + (contact ? ' – ' + contact : ''), Object.assign({ size: 18 }, o))]));
+      ps.push(para([run('Остановки:', Object.assign({ size: 18, bold: true }, o))]));
       Core.stopSummary(day, g, stops).forEach(function (s) {
-        ps.push(para([run(s.stop + ' — ' + s.count, { size: 18 })]));
+        ps.push(para([run(s.stop + ' — ' + s.count, Object.assign({ size: 18 }, o))]));
       });
       return cell(ps, colW);
     }));

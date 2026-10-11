@@ -297,7 +297,7 @@
 
   function newGazelle(n) {
     // kind: Поле | Цех | Цех/поле; vehicle: газель | машина (carName — марка машины, fuel — бензин водителю, ₽).
-    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', workShop: '', reminder: '', contact: '', fuel: '' };
+    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', workShop: '', reminder: '', contact: '', fuel: '', noOrder: false };
   }
 
   function newDay() {
@@ -407,6 +407,7 @@
   function wentPeople(day, kind) {
     const out = [];
     day.gazelles.forEach(function (g) {
+      if (g.noOrder) return; // «заявки в цех пока нет» — в ведомость не идут
       peopleOf(day, g).forEach(function (p) {
         if (p.status === 'ok' && (!kind || kindOf(g, p) === kind)) out.push({ p: p, g: g });
       });
@@ -424,6 +425,38 @@
     const went = wentPeople(day).length;
     const name = function (n) { return [pad2(dp.d), pad2(dp.m), n + chel, place].filter(Boolean).join('_'); };
     return { word: name(listed) + '.docx', excel: name(went) + '.xlsx' };
+  }
+
+  // Чья газель: «М» или «Д» (Миша или Дима); любое другое значение — как есть.
+  function owner(g) {
+    const l = String(g.letter || '').trim().toLowerCase();
+    if (l === 'м' || l === 'm') return 'М';
+    if (l === 'д' || l === 'd') return 'Д';
+    return '';
+  }
+  // Сколько газелей дня у Димы и у Миши: только газели (не машины), где есть люди и есть заявка.
+  function vanTally(day) {
+    const t = { d: 0, m: 0 };
+    day.gazelles.forEach(function (g) {
+      if (g.vehicle === 'машина' || g.noOrder || !peopleOf(day, g).length) return;
+      const o = owner(g);
+      if (o === 'Д') t.d++;
+      else if (o === 'М') t.m++;
+    });
+    return t;
+  }
+  // Текст для чата: «Октябрь:» и строки «1-1д/1м», в конце итог.
+  function tallyText(tally, ym) {
+    const p = ym.split('-');
+    const keys = Object.keys(tally).filter(function (k) { return k.slice(0, 7) === ym; }).sort();
+    let d = 0, m = 0;
+    const lines = keys.map(function (k) {
+      const t = tally[k];
+      d += +t.d || 0; m += +t.m || 0;
+      return (+k.slice(8)) + '-' + (+t.d || 0) + 'д/' + (+t.m || 0) + 'м';
+    });
+    const name = MONTHS_NOM[+p[1] - 1] || '';
+    return { text: [name.charAt(0).toUpperCase() + name.slice(1) + ':'].concat(lines).concat(['Итого: Д ' + d + ', М ' + m]).join('\n'), d: d, m: m, keys: keys };
   }
 
   // Предупреждения перед скачиванием.
@@ -738,7 +771,7 @@
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
+    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
