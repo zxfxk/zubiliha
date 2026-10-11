@@ -85,7 +85,7 @@ assert.deepStrictEqual(C.fileNames(day), {
   d2.brigadier = 'Тестов';
   d2.gazelles = [C.newGazelle(), C.newGazelle()];
   const [mix, car] = d2.gazelles;
-  mix.kind = 'Цех/поле'; mix.number = '601'; mix.capacity = 18; mix.payShop = '3000'; mix.pay = '3500';
+  mix.kind = 'Цех/поле'; mix.number = '601'; mix.capacity = 18; mix.payShop = '3000'; mix.pay = '3500'; mix.workShop = 'Имбирь';
   car.vehicle = 'машина'; car.carName = 'тойота королла'; car.number = '685'; car.capacity = 5;
   const add = (s, g, kind, status) => d2.people.push({ id: C.uid(), surname: s, initial: 'А', stop: 'Рынок', kind, gazId: g.id, status: status || 'ok', flags: [] });
   add('Поляков', mix, 'поле'); add('Цехова', mix, 'цех'); add('Яковлев', mix, 'цех'); add('Водилов', car, 'поле');
@@ -94,6 +94,10 @@ assert.deepStrictEqual(C.fileNames(day), {
   const ws2 = Gen.buildExcel(d2, ExcelJS).worksheets[0];
   assert.strictEqual(ws2.getCell('B5').value, 'Цехова А');
   assert.strictEqual(ws2.getCell('F5').value, 3000);
+  assert.strictEqual(ws2.getCell('C5').value, 'имбирь');
+  assert.strictEqual(ws2.getCell('I5').value, 'уборка пекинки');
+  assert.strictEqual(Gen.workText(d2, mix), 'Цех: Имбирь, поле: Уборка пекинки');
+  assert.strictEqual(Gen.payText(d2, mix), 'цех 3000 / поле 3500');
   assert.strictEqual(ws2.getCell('H5').value, 'Поляков А');
   assert.strictEqual(ws2.getCell('L5').value, 3500);
   assert.strictEqual(ws2.getCell('H6').value, 'Водилов А');

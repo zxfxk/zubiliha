@@ -280,7 +280,7 @@
 
   function newGazelle(n) {
     // kind: Поле | Цех | Цех/поле; vehicle: газель | машина (carName — марка машины).
-    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', reminder: '', contact: '' };
+    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', workShop: '', reminder: '', contact: '' };
   }
 
   function newDay() {
@@ -290,7 +290,7 @@
       date: t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()),
       brigadier: '',
       place: 'Зубилиха',
-      defaults: { departure: '4.50', pay: '4500', start: '06-00', end: '18-00', work: 'Уборка пекинки', payShop: '', reminder: 'НОЖИ С СОБОЙ! ОБЯЗАТЕЛЬНО!' },
+      defaults: { departure: '4.50', pay: '4500', start: '06-00', end: '18-00', work: 'Уборка пекинки', workShop: '', payShop: '', reminder: 'НОЖИ С СОБОЙ! ОБЯЗАТЕЛЬНО!' },
       gazelles: [newGazelle(), newGazelle(), newGazelle()],
       people: [],
       replaceField: '-',
@@ -322,6 +322,12 @@
   function payFor(day, g, kind) {
     if (kind === 'Цех') return gz(day, g, 'payShop') || gz(day, g, 'pay');
     return gz(day, g, 'pay');
+  }
+
+  // Вид работы для поля или цеха (у цеха свой, если задан).
+  function workFor(day, g, kind) {
+    if (kind === 'Цех') return gz(day, g, 'workShop') || gz(day, g, 'work');
+    return gz(day, g, 'work');
   }
 
   // Люди газели в порядке списка; у сборной сначала цех, потом поле.
@@ -420,7 +426,7 @@
     DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
-    newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, sortAlpha: sortAlpha, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
+    newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
     peopleOf: peopleOf, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
   };
   root.Core = Core;

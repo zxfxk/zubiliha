@@ -1,0 +1,45 @@
+# Выкладывает app/ на GitHub Pages при каждом изменении main.
+# index.html написан без <!doctype>/<head> (так его принимает страница Claude), поэтому при выкладке оборачиваем.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # На бесплатном GitHub Pages работает только для открытого репозитория.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Собрать сайт
+        run: |
+          mkdir -p _site
+          cp -r app/core.js app/gen.js app/vendor _site/
+          {
+            printf '<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n'
+            printf '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+            printf '<meta name="robots" content="noindex">\n</head>\n<body>\n'
+            cat app/index.html
+            printf '\n</body>\n</html>\n'
+          } > _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

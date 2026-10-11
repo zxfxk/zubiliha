@@ -164,6 +164,22 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
   function save() { safeSet(KEY, JSON.stringify(day)); updateTop(); }
 
+  // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
+  const BOOK_KEY = 'zubilikha_phones_v1';
+  let book = {};
+  try { book = JSON.parse(localStorage.getItem(BOOK_KEY) || '{}') || {}; } catch (e) { book = {}; }
+  function bookKey(p) { return C.norm(C.personLabel(p)); }
+  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); }
+  function rememberPhone(p) {
+    const k = bookKey(p);
+    if (!k) return;
+    if (p.phone) book[k] = p.phone; else delete book[k];
+    saveBook();
+  }
+  function fillPhone(p) {
+    if (!p.phone) { const k = bookKey(p); if (book[k]) p.phone = book[k]; }
+  }
+
   function exampleDay() {
     const d = C.newDay();
     d.example = true;
@@ -265,7 +281,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       field('Начало', 'defaults.start', d.start) +
       field('Конец', 'defaults.end', d.end) +
       '</div>' +
-      field('Вид работы', 'defaults.work', d.work) +
+      '<div class="grid2">' + field('Вид работы', 'defaults.work', d.work) + field('Вид работы цех', 'defaults.workShop', d.workShop, 'placeholder="как поле"') + '</div>' +
       field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
       '</div>' +
       '<div class="card"><h2>Низ таблицы</h2>' +
@@ -275,7 +291,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       field('Приписка (курсивом)', 'footer', day.footer) +
       '</div>' +
       '<div class="card"><h2>Файл дня</h2>' +
-      '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл.</div>' +
+      '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
       '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
       confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
       '</div>' +
@@ -322,7 +338,7 @@ details > summary { cursor: pointer; font-weight: 600; }
           : field('Номер', pre + 'number', g.number, 'inputmode="numeric"') + field('Буква', pre + 'letter', g.letter)) +
         field('Мест', pre + 'capacity', g.capacity, 'type="number" inputmode="numeric" min="1"') +
         '</div>' +
-        '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'payShop', 'start', 'end', 'work', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
+        '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'payShop', 'start', 'end', 'work', 'workShop', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
         '<div class="grid3" style="margin-top:10px">' +
         field('Выезд в', pre + 'departure', g.departure, 'placeholder="' + esc(d.departure) + '"') +
         field(g.kind === 'Поле' ? 'Оплата' : 'Оплата поле', pre + 'pay', g.pay, 'placeholder="' + esc(d.pay) + '"') +
@@ -330,7 +346,8 @@ details > summary { cursor: pointer; font-weight: 600; }
         field('Начало', pre + 'start', g.start, 'placeholder="' + esc(d.start) + '"') +
         field('Конец', pre + 'end', g.end, 'placeholder="' + esc(d.end) + '"') +
         '</div>' +
-        field('Вид работы', pre + 'work', g.work, 'placeholder="' + esc(d.work) + '"') +
+        field(g.kind === 'Поле' ? 'Вид работы' : 'Вид работы поле', pre + 'work', g.work, 'placeholder="' + esc(d.work) + '"') +
+        (g.kind !== 'Поле' ? field('Вид работы цех', pre + 'workShop', g.workShop, 'placeholder="' + esc(d.workShop || d.work) + '"') : '') +
         field('Напоминание', pre + 'reminder', g.reminder, 'placeholder="' + esc(d.reminder) + '"') +
         '<div class="muted">Пустое поле = как для всех газелей.</div>' +
         '</details>' +
@@ -459,7 +476,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       const hours = C.hh(C.gz(day, g, 'start')) + '-' + C.hh(C.gz(day, g, 'end')) + ' р.д.';
       h += '<td><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '') + ' (' + (+g.capacity || 0) + 'м)</div>' +
         '<div class="red">выезд в ' + esc(C.gz(day, g, 'departure')) + '.</div>' +
-        '<div class="h">Оплата ' + esc(C.gz(day, g, 'pay')) + '. ' + hours + ' ' + esc(C.gz(day, g, 'work')) + '</div>' +
+        '<div class="h">Оплата ' + esc(window.Gen.payText(day, g)) + '. ' + hours + ' ' + esc(window.Gen.workText(day, g)) + '</div>' +
         '<div class="red">' + esc(C.gz(day, g, 'reminder')) + '</div></td>';
     });
     h += '</tr>';
@@ -557,8 +574,8 @@ details > summary { cursor: pointer; font-weight: 600; }
     if (t.dataset.pf) {
       const p = person(t.dataset.id);
       if (!p) return;
-      if (t.dataset.pf === 'name') Object.assign(p, splitName(t.value));
-      else if (t.dataset.pf === 'phone') p.phone = C.formatPhone(t.value);
+      if (t.dataset.pf === 'name') { Object.assign(p, splitName(t.value)); fillPhone(p); }
+      else if (t.dataset.pf === 'phone') { p.phone = C.formatPhone(t.value); rememberPhone(p); }
       else {
         const s = t.value.trim() ? C.findStopByText(t.value, stopsList()) : null;
         p.stop = s ? s.name : t.value.trim();
@@ -602,7 +619,8 @@ details > summary { cursor: pointer; font-weight: 600; }
         break;
       case 'exportJson': {
         const name = 'den_' + dateShort().replace('.', '_') + '_' + C.translit(day.brigadier || 'brigada') + '.json';
-        await offer(name, new Blob([JSON.stringify(day, null, 1)], { type: 'application/json' }));
+        const data = Object.assign({}, day, { phonebook: book });
+        await offer(name, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
         return;
       }
       case 'importJson': document.getElementById('fileOpen').click(); return;
@@ -643,7 +661,9 @@ details > summary { cursor: pointer; font-weight: 600; }
           const k = C.norm(C.personLabel(x));
           if (existing[k]) { dup.push(C.personLabel(x)); return; }
           existing[k] = true;
-          day.people.push({ id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw });
+          const np = { id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw };
+          if (np.phone) rememberPhone(np); else fillPhone(np);
+          day.people.push(np);
           added++;
         });
         const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
@@ -681,7 +701,13 @@ details > summary { cursor: pointer; font-weight: 600; }
     if (!f) return;
     const rd = new FileReader();
     rd.onload = function () {
-      try { day = migrate(JSON.parse(rd.result)); day.example = false; save(); tab = 'people'; render(); }
+      try {
+        day = migrate(JSON.parse(rd.result));
+        Object.assign(book, day.phonebook || {});
+        saveBook();
+        delete day.phonebook;
+        day.example = false; save(); tab = 'people'; render();
+      }
       catch (err) { parseReport = '<div class="note">Это не файл дня: ' + esc(err.message) + '</div>'; render(); }
     };
     rd.readAsText(f);

@@ -16,6 +16,18 @@
 
   function dot(s) { s = String(s || '').trim(); return s && !/[.!?]$/.test(s) ? s + '.' : s; }
 
+  // Оплата и вид работы для заголовка: у сборной газели — цех и поле, если они разные.
+  function payText(day, g) {
+    if (g.kind !== 'Цех/поле') return Core.payFor(day, g, g.kind);
+    const f = Core.payFor(day, g, 'Поле'), c = Core.payFor(day, g, 'Цех');
+    return f === c ? f : 'цех ' + c + ' / поле ' + f;
+  }
+  function workText(day, g) {
+    if (g.kind !== 'Цех/поле') return Core.workFor(day, g, g.kind);
+    const f = Core.workFor(day, g, 'Поле'), c = Core.workFor(day, g, 'Цех');
+    return f === c ? f : 'Цех: ' + c + ', поле: ' + f;
+  }
+
   // ---------------- Word ----------------
 
   function buildWord(day, D) {
@@ -36,11 +48,9 @@
     // Строка 1: заголовки газелей.
     const head = [cell([para([run('№')])], numW)].concat(gs.map(function (g, i) {
       const letter = String(g.letter || '').trim();
-      const payField = Core.payFor(day, g, 'Поле');
-      const payShop = Core.payFor(day, g, 'Цех');
-      const pay = g.kind === 'Цех/поле' ? (payShop === payField ? payField : 'цех ' + payShop + ' / поле ' + payField) : Core.payFor(day, g, g.kind);
+      const pay = payText(day, g);
       const hours = Core.hh(Core.gz(day, g, 'start')) + '-' + Core.hh(Core.gz(day, g, 'end')) + ' р.д.';
-      const work = Core.gz(day, g, 'work');
+      const work = workText(day, g);
       const reminder = Core.gz(day, g, 'reminder');
       const line3 = [run(['Оплата ' + dot(pay), hours, dot(work)].filter(Boolean).join(' ').replace(/\.$/, ''), { bold: true })];
       if (reminder) {
@@ -178,7 +188,7 @@
         const own = String(x.p.pay || '').trim();
         return {
           name: Core.personLabel(x.p),
-          work: lowerFirst(Core.gz(day, x.g, 'work')),
+          work: lowerFirst(Core.workFor(day, x.g, kind)),
           start: Core.gz(day, x.g, 'start'),
           end: Core.gz(day, x.g, 'end'),
           pay: payNum(own || Core.payFor(day, x.g, kind)),
@@ -258,7 +268,7 @@
     return wb;
   }
 
-  const Gen = { buildWord: buildWord, buildExcel: buildExcel, places: places, totalText: totalText };
+  const Gen = { payText: payText, workText: workText, buildWord: buildWord, buildExcel: buildExcel, places: places, totalText: totalText };
   root.Gen = Gen;
   if (typeof module !== 'undefined' && module.exports) module.exports = Gen;
 })(typeof window !== 'undefined' ? window : globalThis);
