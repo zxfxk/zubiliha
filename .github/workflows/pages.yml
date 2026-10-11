@@ -29,11 +29,20 @@ jobs:
       - name: Собрать сайт
         run: |
           mkdir -p _site
-          cp -r app/core.js app/gen.js app/vendor _site/
+          cp -r app/core.js app/gen.js app/vendor app/icons _site/
           {
             printf '<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n'
             printf '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
-            printf '<meta name="robots" content="noindex">\n</head>\n<body>\n'
+            printf '<meta name="robots" content="noindex">\n'
+            # Иконка и название для «На экран Домой» (айфон и андроид).
+            printf '<link rel="apple-touch-icon" href="icons/icon-180.png">\n'
+            printf '<link rel="icon" type="image/png" href="icons/icon-192.png">\n'
+            printf '<link rel="manifest" href="icons/manifest.webmanifest">\n'
+            printf '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+            printf '<meta name="mobile-web-app-capable" content="yes">\n'
+            printf '<meta name="apple-mobile-web-app-title" content="Газели">\n'
+            printf '<meta name="theme-color" content="#2f3640">\n'
+            printf '</head>\n<body>\n'
             cat app/index.html
             printf '\n</body>\n</html>\n'
           } > _site/index.html
