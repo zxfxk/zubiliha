@@ -151,9 +151,20 @@ details > summary { cursor: pointer; font-weight: 600; }
   'use strict';
   const C = window.Core;
   // Общая база для GitHub-сайта (Firebase). Эти данные не секретные: без пароля база никого не пускает.
-  // email — общий логин бригады, пароль знают только свои и вводят на экране входа.
-  const FIREBASE = { email: '', config: null };
-  const useFirebase = !!(FIREBASE.config && FIREBASE.email) && !(window.claude && window.claude.use);
+  // email — общий логин бригады (пусто — спрашиваем на экране входа), пароль знают только свои.
+  const FIREBASE = {
+    email: '',
+    config: {
+      apiKey: 'AIzaSyBvkZ64XTdkfzZJ6duLnQywFmTobrb4nrU',
+      authDomain: 'zubilikha.firebaseapp.com',
+      projectId: 'zubilikha',
+      storageBucket: 'zubilikha.firebasestorage.app',
+      messagingSenderId: '1051256864141',
+      appId: '1:1051256864141:web:442384f43c700f3fd851c4'
+    }
+  };
+  const useFirebase = !!FIREBASE.config && !(window.claude && window.claude.use);
+  const LOGIN_KEY = 'zubilikha_login';
   const KEY = 'zubilikha_day_v1';
   const TAB_KEY = 'zubilikha_tab';
   const $main = document.getElementById('main');
@@ -856,12 +867,16 @@ details > summary { cursor: pointer; font-weight: 600; }
     const pw = document.getElementById('loginPw');
     const nm = document.getElementById('loginName');
     if (nm && nm.value.trim()) safeSet(NAME_KEY, nm.value.trim());
+    const em = document.getElementById('loginEmail');
+    const email = FIREBASE.email || (em && em.value.trim()) || '';
+    if (em && email) safeSet(LOGIN_KEY, email);
+    if (!email) { login.err = 'Введите почту.'; render(); return; }
     if (!fb || !pw || !pw.value) { login.err = 'Введите пароль.'; render(); return; }
     login.busy = true; login.err = ''; render();
-    try { await fb.auth.signInWithEmailAndPassword(FIREBASE.email, pw.value); }
+    try { await fb.auth.signInWithEmailAndPassword(email, pw.value); }
     catch (e) {
       const c = (e && e.code) || '';
-      login.err = /wrong-password|invalid-credential|invalid-login|user-not-found/.test(c) ? 'Неверный пароль.'
+      login.err = /wrong-password|invalid-credential|invalid-login|user-not-found|invalid-email/.test(c) ? (FIREBASE.email ? 'Неверный пароль.' : 'Неверная почта или пароль.')
         : /too-many-requests/.test(c) ? 'Слишком много попыток. Подождите несколько минут.'
         : /network/.test(c) ? 'Нет интернета.' : 'Не получилось войти: ' + (e && e.message || c);
     }
@@ -878,6 +893,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
     return '<section><div class="card"><h2>Вход</h2>' +
       '<div class="muted">Список общий для бригады. Введите пароль, который знают только свои.</div>' +
+      (FIREBASE.email ? '' : '<label>Почта<input type="email" id="loginEmail" value="' + esc(safeGet(LOGIN_KEY) || '') + '" autocomplete="username"></label>') +
       '<label>Пароль<input type="password" id="loginPw" autocomplete="current-password"></label>' +
       '<label>Ваше имя (видно второму, кто правил последним)<input id="loginName" value="' + esc(safeGet(NAME_KEY) || '') + '" autocomplete="off"></label>' +
       (login.err ? '<div class="note">' + esc(login.err) + '</div>' : '') +
