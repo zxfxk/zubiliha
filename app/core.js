@@ -1,0 +1,375 @@
+// Логика без интерфейса: справочник остановок, разбор текста из ВК, подсчёты, имена файлов.
+(function (root) {
+  'use strict';
+
+  // Справочник: строка = остановка, первое значение — как писать в файлах, дальше варианты написания.
+  // Строка "# зона ..." начинает зону (для этапа 2: распределение по газелям).
+  const DEFAULT_STOPS = [
+    '# зона 1: от 3шк до Энергосбыта',
+    '3шк, 3 школа, 3 шк заводская',
+    'Матрешки',
+    'Демократическая, демократич, демокр',
+    'П. Зеленый, зеленый',
+    'Леспромхоз, леспромх, леспром',
+    'Пурех 5ка, Пурех, пурих, пурих 5ка, пурех пятерка',
+    'Ошара',
+    '3комм, 3 коммуниста, 3 комм, 3-комм',
+    'Рынок',
+    'Энергосбыт',
+    '# зона 2: от Художки до конца',
+    'Художка',
+    'Стекляшка',
+    'Глазова/Пушкина, глаз/пушкина',
+    'Глазова/Доспалова, глаз/доспал',
+    'Глазова/Фрунзе, глаз/фрунзе',
+    'Фрунзе/Пионерская, фрунзе/пионер',
+    'Фрунзе/Папанина, фрунзе/папан',
+    'Фрунзе/50лет, фрунзе/50л',
+    'Чернышевского, черныш, черныш 5ка',
+    '# деревни: в любую газель',
+    'Зименки',
+    'Шалдеж',
+    'Шалдежка, шалджежка',
+    'Боковая',
+  ].join('\n');
+
+  const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const MONTHS_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+  // ---------- нормализация и справочник ----------
+
+  function norm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/пят[её]рка|пят[её]ра/g, '5ка')
+      .replace(/(\d)\s*-?\s*(ка)\b/g, '$1ка')
+      .replace(/([а-яa-z])(\d)/g, '$1 $2')
+      .replace(/(\d)(?!ка)([а-яa-z])/g, '$1 $2')
+      .replace(/[^а-яa-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function tokens(s) { return norm(s).split(' ').filter(Boolean); }
+
+  function parseStops(text) {
+    const stops = [];
+    let zone = '';
+    String(text || '').split('\n').forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      if (line[0] === '#') { zone = line.slice(1).trim(); return; }
+      const parts = line.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+      if (!parts.length) return;
+      stops.push({
+        name: parts[0],
+        zone: zone,
+        order: stops.length,
+        aliases: parts.map(tokens).filter(function (t) { return t.length; }),
+      });
+    });
+    return stops;
+  }
+
+  // Совпадение слова из текста со словом варианта: точно, по началу слова (для слов от 3 букв) или с одной опечаткой.
+  function tokMatch(textTok, aliasTok) {
+    if (textTok === aliasTok) return true;
+    if (/^\d/.test(aliasTok) || /^\d/.test(textTok)) {
+      return textTok.replace(/ка$/, '') === aliasTok.replace(/ка$/, '');
+    }
+    if (aliasTok.length >= 3 && textTok.length >= 3 && (textTok.startsWith(aliasTok) || aliasTok.startsWith(textTok))) return true;
+    if (aliasTok.length >= 5 && textTok.length >= 5 && lev(textTok, aliasTok) <= 1) return true;
+    return false;
+  }
+
+  function lev(a, b) {
+    if (Math.abs(a.length - b.length) > 1) return 2;
+    const d = [];
+    for (let i = 0; i <= a.length; i++) { d[i] = [i]; }
+    for (let j = 0; j <= b.length; j++) { d[0][j] = j; }
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+    }
+    return d[a.length][b.length];
+  }
+
+  // Ищет остановку среди слов. Возвращает {stop, used: индексы слов} или null.
+  function findStop(toks, stops, skip) {
+    let best = null;
+    stops.forEach(function (stop) {
+      stop.aliases.forEach(function (alias) {
+        const used = [];
+        let exact = 0;
+        for (const at of alias) {
+          let found = -1;
+          for (let i = 0; i < toks.length; i++) {
+            if (used.indexOf(i) >= 0 || (skip && skip(i))) continue;
+            if (tokMatch(toks[i], at)) { found = i; break; }
+          }
+          if (found < 0) return;
+          if (toks[found] === at) exact++;
+          used.push(found);
+        }
+        const score = used.length * 1000 + exact * 100 + alias.join('').length;
+        if (!best || score > best.score) best = { stop: stop, used: used, score: score };
+      });
+    });
+    return best;
+  }
+
+  function findStopByText(text, stops) {
+    const t = tokens(text);
+    const m = findStop(t, stops);
+    return m && m.used.length === t.length ? m.stop : (m ? m.stop : null);
+  }
+
+  // ---------- разбор текста из ВК ----------
+
+  const DATE_RE = /^\s*(\d{1,2})\s*[.,/\- ]\s*(\d{1,2})\.?\s*(.*)$/;
+
+  function cap(s) { return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s; }
+
+  // Латинские буквы-двойники внутри русских слов и «ë» → русские.
+  const LAT = { a: 'а', e: 'е', o: 'о', p: 'р', c: 'с', x: 'х', y: 'у', k: 'к', m: 'м', t: 'т', h: 'н', b: 'в', A: 'А', E: 'Е', O: 'О', P: 'Р', C: 'С', X: 'Х', K: 'К', M: 'М', T: 'Т', H: 'Н', B: 'В' };
+  function fixLetters(s) {
+    s = String(s || '').replace(/[ёë]/g, 'е').replace(/[ЁË]/g, 'Е');
+    return s.replace(/[A-Za-zА-Яа-я]+/g, function (w) {
+      if (!/[А-Яа-я]/.test(w) || !/[A-Za-z]/.test(w)) return w;
+      return w.replace(/[A-Za-z]/g, function (ch) { return LAT[ch] || ch; });
+    });
+  }
+
+  // text — вставленный текст; day, month — нужная дата (числа); stops — parseStops().
+  function parseVk(text, day, month, stops) {
+    const people = [];
+    const skipped = [];
+    String(text || '').split(/\r?\n/).forEach(function (rawLine) {
+      const line = rawLine.trim();
+      if (!line) return;
+      const m = line.match(DATE_RE);
+      if (!m) return; // имена, статусы, «вышла из чата»
+      const d = +m[1], mo = +m[2];
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
+      if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
+      const words = fixLetters(m[3]).split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
+      const lower = words.map(function (w) { return norm(w); });
+      const flags = [];
+
+      let kind = '';
+      const isKind = function (i) { return lower[i] === 'поле' || lower[i] === 'цех'; };
+      lower.forEach(function (w) { if (w === 'поле' || w === 'цех') kind = kind && kind !== w ? 'оба?' : w; });
+      if (!kind) { kind = 'поле'; flags.push('не указано поле/цех'); }
+      if (kind === 'оба?') { kind = 'поле'; flags.push('и поле, и цех'); }
+
+      // Слова, которые могут быть инициалами (одна буква), не участвуют в поиске остановки.
+      const isInitial = function (i) {
+        return /^[А-Яа-яA-Za-z]$/.test(words[i]) && i > 0 && words[i - 1].length >= 2 && /^[А-Яа-яA-Za-z]+$/.test(words[i - 1]) && !isKind(i - 1);
+      };
+      const flat = [];
+      const flatIdx = [];
+      words.forEach(function (w, i) {
+        if (isKind(i)) return;
+        norm(w).split(' ').forEach(function (t) { if (t) { flat.push(t); flatIdx.push(i); } });
+      });
+      const sm = findStop(flat, stops, function (fi) { return isInitial(flatIdx[fi]); });
+      const usedWords = {};
+      let stopName = '';
+      if (sm) {
+        stopName = sm.stop.name;
+        sm.used.forEach(function (fi) { usedWords[flatIdx[fi]] = true; });
+      }
+
+      // Остальное — люди: Фамилия [И].
+      const persons = [];
+      const leftover = [];
+      for (let i = 0; i < words.length; i++) {
+        if (usedWords[i] || isKind(i)) continue;
+        const w = words[i];
+        if (/^\d+$/.test(w)) { leftover.push(w); continue; }
+        if (/^[А-Яа-яA-Za-z]$/.test(w)) {
+          const last = persons[persons.length - 1];
+          if (last && !last.initial) last.initial = w.toUpperCase();
+          else leftover.push(w);
+          continue;
+        }
+        const last = persons[persons.length - 1];
+        if (last && !last.initial && /^[А-ЯA-Z]/.test(w) && w.length >= 2 && !/^[А-ЯA-Z]+$/.test(w)) {
+          // «Иванова Мария» — второе слово похоже на имя: берём первую букву.
+          last.initial = w[0].toUpperCase();
+          last.flags.push('инициал взят из имени «' + w + '»');
+          continue;
+        }
+        persons.push({ surname: cap(w), initial: '', flags: [] });
+      }
+      if (!sm && persons.length > 1 && !persons[persons.length - 1].initial) {
+        // «Иванов А Новаяостановка»: последнее слово без инициала — скорее всего неизвестная остановка.
+        leftover.unshift(persons.pop().surname);
+      }
+      if (!persons.length) { skipped.push({ raw: line, reason: 'не найдена фамилия' }); return; }
+      if (!stopName) {
+        flags.push('остановка не распознана');
+        stopName = leftover.join(' ');
+      } else if (leftover.length) {
+        flags.push('лишнее: ' + leftover.join(' '));
+      }
+      persons.forEach(function (p) {
+        const f = flags.concat(p.flags);
+        if (!p.initial) f.push('нет инициала');
+        people.push({ surname: p.surname, initial: p.initial, stop: stopName, kind: kind, flags: f, raw: line });
+      });
+    });
+    return { people: people, skipped: skipped };
+  }
+
+  // ---------- склонение «Фамилия И» в винительный падеж ----------
+
+  function accusative(name) {
+    const parts = String(name || '').trim().split(/\s+/);
+    if (!parts[0]) return '';
+    let s = parts[0];
+    const l = s.toLowerCase();
+    if (/(ова|ева|ёва|ина|ына)$/.test(l)) s = s.slice(0, -1) + 'у';
+    else if (/(ая)$/.test(l)) s = s.slice(0, -2) + 'ую';
+    else if (/(ов|ев|ёв|ин|ын)$/.test(l)) s = s + 'а';
+    else if (/(ский|цкий|кий|гий|хий)$/.test(l)) s = s.slice(0, -2) + 'ого';
+    else if (/(ой)$/.test(l)) s = s.slice(0, -2) + 'ого';
+    parts[0] = s;
+    return parts.join(' ');
+  }
+
+  // ---------- транслит для имён файлов ----------
+
+  const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+  function translit(s) {
+    return String(s || '').split('').map(function (ch) {
+      const lo = ch.toLowerCase();
+      if (TR[lo] === undefined) return ch;
+      const t = TR[lo];
+      return ch !== lo && t ? t[0].toUpperCase() + t.slice(1) : t;
+    }).join('').replace(/[^A-Za-z0-9_-]+/g, '');
+  }
+
+  // ---------- модель дня ----------
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function dateParts(iso) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    return { y: +m[1], m: +m[2], d: +m[3] };
+  }
+
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+
+  function newGazelle(n) {
+    return { id: uid(), kind: 'Поле', number: '', letter: '', capacity: 19, departure: '', pay: '', start: '', end: '', work: '', reminder: '', contact: '' };
+  }
+
+  function newDay() {
+    const t = new Date(Date.now() + 86400000);
+    return {
+      version: 1,
+      date: t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()),
+      brigadier: '',
+      place: 'Зубилиха',
+      defaults: { departure: '4.50', pay: '4500', start: '06-00', end: '18-00', work: 'Уборка пекинки', reminder: 'НОЖИ С СОБОЙ! ОБЯЗАТЕЛЬНО!' },
+      gazelles: [newGazelle(), newGazelle(), newGazelle()],
+      people: [],
+      replaceField: '-',
+      replaceShop: '-',
+      zp: '',
+      footer: '**Без ножей - возвращают домой**',
+      stopsText: DEFAULT_STOPS,
+      latinNames: true,
+    };
+  }
+
+  // Параметр газели с учётом значений дня по умолчанию.
+  function gz(day, g, key) {
+    const v = g[key];
+    return v !== undefined && v !== null && String(v).trim() !== '' ? String(v).trim() : String(day.defaults[key] || '').trim();
+  }
+
+  function hh(t) { const m = String(t || '').match(/^(\d{1,2})/); return m ? pad2(+m[1]) : ''; }
+
+  function personLabel(p) { return [p.surname, p.initial].filter(Boolean).join(' '); }
+
+  function peopleOf(day, g) {
+    return day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; });
+  }
+
+  function stopSummary(day, g, stops) {
+    const counts = {};
+    peopleOf(day, g).forEach(function (p) {
+      const k = (p.stop || '').trim() || '(без остановки)';
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const orderOf = function (name) {
+      const s = stops.find(function (x) { return x.name === name; });
+      return s ? s.order : 1000;
+    };
+    return Object.keys(counts)
+      .sort(function (a, b) { return orderOf(a) - orderOf(b); })
+      .map(function (k) { return { stop: k, count: counts[k] }; });
+  }
+
+  // Сколько человек реально поехало (для Excel и имени файла).
+  function wentPeople(day, kind) {
+    const out = [];
+    day.gazelles.forEach(function (g) {
+      if (kind && g.kind !== kind) return;
+      day.people.forEach(function (p) {
+        if (p.gazId === g.id && p.status === 'ok') out.push({ p: p, g: g });
+      });
+    });
+    return out;
+  }
+
+  function fileNames(day) {
+    const dp = dateParts(day.date) || { y: 0, m: 0, d: 0 };
+    const t = day.latinNames ? translit : function (s) { return String(s || '').replace(/[\\/:*?"<>|\s]+/g, ''); };
+    const brig = t(day.brigadier) || (day.latinNames ? 'Brigadir' : 'Бригадир');
+    const place = t(day.place);
+    const n = day.gazelles.length;
+    const went = wentPeople(day).length;
+    const gaz = day.latinNames ? n + 'gazel' + (n === 1 ? '' : n < 5 ? 'i' : 'ey') : n + (n === 1 ? 'газель' : n < 5 ? 'газели' : 'газелей');
+    const word = [pad2(dp.d), pad2(dp.m), gaz, brig, place].filter(Boolean).join('_') + '.docx';
+    const xls = [pad2(dp.d), pad2(dp.m), dp.y, day.latinNames ? 'brigada' : 'бригада', brig, went + (day.latinNames ? 'chel' : 'чел')].join('_') + '.xlsx';
+    return { word: word, excel: xls };
+  }
+
+  // Предупреждения перед скачиванием.
+  function warnings(day) {
+    const w = [];
+    const unassigned = day.people.filter(function (p) { return !p.gazId && p.status !== 'refused'; });
+    if (unassigned.length) w.push('Без газели: ' + unassigned.length + ' чел. В файлы они не попадут.');
+    day.gazelles.forEach(function (g, i) {
+      const n = peopleOf(day, g).length;
+      const cap = +g.capacity || 0;
+      if (n > cap) w.push('Газель ' + (i + 1) + ': ' + n + ' чел. при ' + cap + ' местах.');
+      if (!String(g.number).trim()) w.push('Газель ' + (i + 1) + ': не указан номер.');
+    });
+    const flagged = day.people.filter(function (p) { return p.flags && p.flags.length && p.status !== 'refused'; });
+    if (flagged.length) w.push('Проверить: ' + flagged.length + ' чел.');
+    if (!String(day.brigadier).trim()) w.push('Не указан бригадир.');
+    const seen = {};
+    day.people.forEach(function (p) {
+      if (p.status === 'refused') return;
+      const k = norm(personLabel(p));
+      if (seen[k]) w.push('Повтор: ' + personLabel(p));
+      seen[k] = true;
+    });
+    return w;
+  }
+
+  const Core = {
+    DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
+    norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
+    accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
+    newDay: newDay, newGazelle: newGazelle, gz: gz, hh: hh, personLabel: personLabel,
+    peopleOf: peopleOf, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
+  };
+  root.Core = Core;
+  if (typeof module !== 'undefined' && module.exports) module.exports = Core;
+})(typeof window !== 'undefined' ? window : globalThis);
