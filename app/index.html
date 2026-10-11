@@ -772,10 +772,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
 
   // Порядок людей во всех газелях сразу (так же выйдет в Word).
   function sortCard() {
-    if (!day.people.some(function (p) { return p.gazId && p.status !== 'refused'; })) return '';
-    return '<div class="card"><div class="muted">Порядок людей в Word, во всех газелях</div><div class="row">' +
+    if (!day.people.length) return '';
+    const seated = day.people.some(function (p) { return p.gazId && p.status !== 'refused'; });
+    return '<div class="card">' + (seated ? '<div class="muted">Порядок людей в Word, во всех газелях</div><div class="row">' +
       '<button class="btn small" data-act="sortAll" data-v="name">Сортировать по фамилиям</button>' +
-      '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div></div>';
+      '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div>' : '') +
+      (pendingConfirm === 'clearAll'
+        ? '<div class="note">Убрать всех людей (' + day.people.length + ') из газелей и из «Без газели»?' + (sync.on ? ' Список очистится у обоих.' : '') + ' Газели, дата и настройки останутся. Копия сохранится в «Истории дня» на вкладке «День».</div>' +
+          '<div class="confirm"><button class="btn danger" data-act="clearAll" data-yes="1">Очистить</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
+        : '<div class="row"><button class="btn small danger" data-act="clearAll">Очистить все газели</button></div>') +
+      '</div>';
   }
 
   // Карточка автораспределения по зонам из справочника остановок.
@@ -1675,6 +1681,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           (bad.length ? '<br>Не разобрал: ' + bad.map(function (s) { return '«' + esc(s.raw) + '»'; }).join(', ') : '') + '</div>';
         break;
       }
+      case 'clearAll':
+        if (!yes) { pendingConfirm = 'clearAll'; break; }
+        pendingConfirm = null;
+        keep('перед «Очистить все газели»');
+        day.people = []; assignReport = null; parseReport = '';
+        break;
       case 'vkClear': vkDraft = ''; parseReport = ''; break;
       case 'pAdd': {
         const g = gById(b.dataset.g);
