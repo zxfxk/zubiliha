@@ -587,7 +587,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '</div>' +
 
       syncCard() +
-      dayFileCard() + historyCard() +
+      dayFileCard() + historyCard() + bkCard() +
       '<div class="card"><details><summary>Справочник остановок</summary>' +
       '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны: по зонам раскладываются газели. Зона, где в названии есть «деревни» или «любую», идёт в любую газель. Порядок строк — порядок маршрута и сводки.</p>' +
       '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
@@ -1145,11 +1145,13 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     sync.issuesRef = db.doc('shared/issues'); sync.db = db;
     sync.unsub = [sync.dayRef.onSnapshot(onRemoteDay, onSyncError), sync.bookRef.onSnapshot(onRemoteBook, onSyncError), sync.issuesRef.onSnapshot(onRemoteIssues, onSyncError)];
     rerender();
+    // Недельную копию делаю чуть погодя, когда день уже подтянулся.
+    setTimeout(bkAuto, 5000);
   }
   function stopSync() {
     (sync.unsub || []).forEach(function (f) { try { f(); } catch (e) { /* уже отписано */ } });
     sync.unsub = []; sync.on = false; sync.base = null; sync.rev = null; sync.bookBase = null; sync.bookRev = null; isync.base = null; isync.rev = null;
-    clearTimeout(sync.timer);
+    clearTimeout(sync.timer); bk.list = null;
   }
   function onSyncError(e) {
     const code = e && e.code;
@@ -1317,6 +1319,121 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       if (sync.again) { sync.again = false; queueIssues(); }
     }
     updateTop();
+  }
+
+  // ---------- Копия базы раз в неделю ----------
+  // Лежит в той же базе: shared/backups — список копий, shared/backup_<id>_<n> — сама копия кусками
+  // (в одном документе базы помещается не больше ~256 КБ). Хранятся 4 последние недельные копии
+  // и одна «перед восстановлением». Скриншоты «Что не так» в копию не попадают, только текст записей.
+  const BK_WEEK = 7 * 86400000, BK_KEEP = 4, BK_PART = 100000;
+  const bk = { list: null, busy: false, err: '', msg: '' };
+  function bkIndex() { return sync.db.doc('shared/backups'); }
+  function bkPart(id, n) { return sync.db.doc('shared/backup_' + id + '_' + n); }
+  async function bkLoadList() {
+    const snap = await bkIndex().get();
+    bk.list = snap.exists ? (snap.data().items || []) : [];
+    return bk.list;
+  }
+  // Снимок прямо из базы, а не из этого телефона: так в копию попадает ровно то, что видят все.
+  async function bkSnapshot() {
+    const ds = await sync.dayRef.get(), bs = await sync.bookRef.get(), is = await sync.issuesRef.get();
+    const d = ds.exists ? ds.data() : {}, b = bs.exists ? bs.data() : {}, i = is.exists ? is.data() : {};
+    return { day: d.day || null, book: b.book || {}, marks: b.marks || {}, tally: b.tally || {}, issues: i.items || {} };
+  }
+  function bkSummary(data) {
+    return {
+      people: ((data.day && data.day.people) || []).length, date: (data.day && data.day.date) || '',
+      phones: Object.keys(data.book || {}).length, issues: Object.keys(data.issues || {}).length,
+    };
+  }
+  async function bkWrite(kind, data) {
+    const json = JSON.stringify(data);
+    const parts = Math.max(1, Math.ceil(json.length / BK_PART));
+    const now = new Date();
+    // У недельной копии id — дата: если двое открыли сайт в один день, они пишут одну и ту же копию.
+    const id = kind === 'week' ? 'w' + now.getFullYear() + C.pad2(now.getMonth() + 1) + C.pad2(now.getDate()) : 'u' + Date.now().toString(36);
+    for (let n = 0; n < parts; n++) await bkPart(id, n).set({ s: json.slice(n * BK_PART, (n + 1) * BK_PART) });
+    const list = (await bkLoadList()).filter(function (x) { return x.id !== id; });
+    list.push(Object.assign({ id: id, kind: kind, at: Date.now(), by: sync.me || '', parts: parts }, bkSummary(data)));
+    list.sort(function (a, b) { return a.at - b.at; });
+    const weeks = list.filter(function (x) { return x.kind === 'week'; }).slice(-BK_KEEP);
+    const undo = list.filter(function (x) { return x.kind === 'undo'; }).slice(-1);
+    const keepIds = weeks.concat(undo).map(function (x) { return x.id; });
+    const next = list.filter(function (x) { return keepIds.indexOf(x.id) >= 0; });
+    await bkIndex().set({ items: next });
+    bk.list = next;
+    for (const x of list) {
+      if (keepIds.indexOf(x.id) >= 0) continue;
+      for (let n = 0; n < (x.parts || 1); n++) { const r = bkPart(x.id, n); await (r.delete ? r.delete() : r.set({ s: '' })); }
+    }
+  }
+  function bkLastWeek() {
+    const w = (bk.list || []).filter(function (x) { return x.kind === 'week'; });
+    return w.length ? w[w.length - 1] : null;
+  }
+  // При входе: если последней недельной копии больше 7 дней, делаю новую.
+  async function bkAuto() {
+    if (!sync.on || sync.readOnly || bk.busy) return;
+    bk.busy = true;
+    try {
+      await bkLoadList();
+      const last = bkLastWeek();
+      if (!last || Date.now() - last.at >= BK_WEEK) {
+        const data = await bkSnapshot();
+        if (data.day || Object.keys(data.book).length || Object.keys(data.issues).length) await bkWrite('week', data);
+      }
+      bk.err = '';
+    } catch (e) { bk.err = 'Не получилось сделать недельную копию базы, попробую при следующем входе.'; }
+    finally { bk.busy = false; if (tab === 'day') rerender(); }
+  }
+  async function bkRestore(id) {
+    const x = (bk.list || []).find(function (y) { return y.id === id; });
+    if (!x || bk.busy) return;
+    bk.busy = true; bk.msg = ''; bk.err = '';
+    try {
+      let json = '';
+      for (let n = 0; n < (x.parts || 1); n++) { const snap = await bkPart(id, n).get(); if (!snap.exists) throw new Error('part'); json += snap.data().s || ''; }
+      const data = JSON.parse(json);
+      keep('перед восстановлением копии');
+      await bkWrite('undo', await bkSnapshot());
+      if (data.day) { day = migrate(JSON.parse(JSON.stringify(data.day))); day.example = false; assignReport = null; }
+      book = data.book || {}; marks = data.marks || {}; tally = data.tally || {};
+      safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally();
+      const old = {}; issues.forEach(function (y) { old[y.id] = y; });
+      const items = data.issues || {};
+      issues = Object.keys(items).map(function (iid) {
+        const m = items[iid], y = old[iid];
+        return Object.assign({ id: iid, img: '', up: true }, y || {}, { at: m.at, text: m.text, by: m.by, ctx: m.ctx, imgRemote: m.img && !(y && y.img) });
+      }).sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+      saveIssues();
+      save();
+      bk.msg = 'Вернул копию от ' + fmtAt(new Date(x.at).toISOString()) + '. Что было до этого, лежит в копии «перед восстановлением».';
+    } catch (e) {
+      bk.err = 'Не получилось восстановить копию. Ничего не поменялось, попробуйте ещё раз.';
+    } finally { bk.busy = false; render(); }
+  }
+  function bkLabel(x) {
+    const dp = C.dateParts(x.date);
+    return fmtAt(new Date(x.at).toISOString()) + (x.kind === 'undo' ? ' · перед восстановлением' : '') +
+      ' · день ' + (dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : '?') + ', ' + (x.people || 0) + ' чел., телефонов ' + (x.phones || 0);
+  }
+  function bkCard() {
+    if (!sync.on) return '';
+    const list = (bk.list || []).slice().reverse();
+    const last = bkLastWeek();
+    const rows = list.map(function (x) {
+      if (pendingConfirm === 'bkBack' + x.id) {
+        return '<div class="hist"><div>' + bkLabel(x) + '</div><div class="note">День, телефоны, отметки «часто не выходит», подсчёт за месяц и записи «Что не так» станут как в этой копии у всех, кто вошёл. Всё, что сейчас, я сначала сохраню отдельной копией «перед восстановлением», а день ещё и в «Историю дня».</div>' +
+          '<div class="confirm"><button class="btn danger" data-act="bkBack" data-v="' + x.id + '" data-yes="1">Восстановить</button><button class="btn" data-act="cancelConfirm">Отмена</button></div></div>';
+      }
+      return '<div class="hist"><div>' + bkLabel(x) + '</div>' + (sync.readOnly ? '' : '<button class="btn small" data-act="bkBack" data-v="' + x.id + '"' + (bk.busy ? ' disabled' : '') + '>Восстановить из копии</button>') + '</div>';
+    }).join('');
+    return '<div class="card"><details' + (/^bkBack/.test(pendingConfirm || '') || bk.msg ? ' open' : '') + '><summary>Копия базы раз в неделю' +
+      (last ? ' · последняя ' + fmtAt(new Date(last.at).toISOString()).slice(0, 5) : '') + '</summary>' +
+      '<div class="muted">Раз в неделю, при входе, сайт сам сохраняет копию всей базы: день, телефоны, отметки, подсчёт за месяц и записи «Что не так» (без скриншотов). Хранятся 4 последние недели. Копия лежит в той же базе: она спасает от случайного удаления и ошибок, но не от потери самой базы. Для этого есть «Резервная копия файлом».</div>' +
+      (bk.msg ? '<div class="note">' + esc(bk.msg) + '</div>' : '') + (bk.err ? '<div class="note">' + esc(bk.err) + '</div>' : '') +
+      (bk.list === null ? '<div class="muted">Загружаю список копий…</div>' : rows || '<div class="muted">Копий пока нет.</div>') +
+      '</details></div>';
   }
 
   function syncLine() {
@@ -1527,6 +1644,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         return;
       }
       case 'cancelConfirm': pendingConfirm = null; break;
+      case 'bkBack': {
+        if (!yes) { pendingConfirm = 'bkBack' + b.dataset.v; bk.msg = ''; break; }
+        pendingConfirm = null;
+        await bkRestore(b.dataset.v);
+        return;
+      }
       case 'histBack': {
         if (!yes) { pendingConfirm = 'histBack' + i; break; }
         pendingConfirm = null;
