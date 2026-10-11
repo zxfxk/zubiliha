@@ -150,6 +150,10 @@ details > summary { cursor: pointer; font-weight: 600; }
 (function () {
   'use strict';
   const C = window.Core;
+  // Общая база для GitHub-сайта (Firebase). Эти данные не секретные: без пароля база никого не пускает.
+  // email — общий логин бригады, пароль знают только свои и вводят на экране входа.
+  const FIREBASE = { email: '', config: null };
+  const useFirebase = !!(FIREBASE.config && FIREBASE.email) && !(window.claude && window.claude.use);
   const KEY = 'zubilikha_day_v1';
   const TAB_KEY = 'zubilikha_tab';
   const $main = document.getElementById('main');
@@ -308,6 +312,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   function stopsList() { return C.parseStops(day.stopsText); }
 
   function updateTop() {
+    if (login.need) { document.getElementById('title').textContent = 'Газели'; document.getElementById('subtitle').textContent = ''; return; }
     document.getElementById('title').textContent = (day.place || 'Газели') + ' · ' + dateTitle();
     const active = day.people.filter(function (p) { return p.status !== 'refused'; });
     const placed = active.filter(function (p) { return p.gazId; }).length;
@@ -332,6 +337,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     document.querySelectorAll('#tabs button').forEach(function (b) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
+    if (login.need) { $main.innerHTML = loginHtml(); updateTop(); return; }
     const html = ({ day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles, issues: renderIssues }[tab] || renderPeople)();
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
     updateTop();
@@ -796,16 +802,87 @@ details > summary { cursor: pointer; font-weight: 600; }
       try { sync.me = await sync.user.id(); } catch (e) { sync.me = null; }
       try { if ((await sync.user.can('data.write')) === false) sync.readOnly = true; } catch (e) { /* не сказали — решит запись */ }
     }
-    sync.on = true;
+    startSync(db, 'claude');
+  }
+  function startSync(db, mode) {
+    if (sync.on) return;
+    sync.on = true; sync.mode = mode; sync.err = '';
     sync.dayRef = db.doc('shared/day');
     sync.bookRef = db.doc('shared/book');
-    sync.dayRef.onSnapshot(onRemoteDay, onSyncError);
-    sync.bookRef.onSnapshot(onRemoteBook, onSyncError);
+    sync.unsub = [sync.dayRef.onSnapshot(onRemoteDay, onSyncError), sync.bookRef.onSnapshot(onRemoteBook, onSyncError)];
     rerender();
   }
+  function stopSync() {
+    (sync.unsub || []).forEach(function (f) { try { f(); } catch (e) { /* уже отписано */ } });
+    sync.unsub = []; sync.on = false; sync.base = null; sync.rev = null; sync.bookBase = null; sync.bookRev = null;
+    clearTimeout(sync.timer);
+  }
   function onSyncError(e) {
-    sync.err = e && e.code === 'revoked' ? 'Доступ к общему дню закрыт.' : 'Общий день не обновляется. Перезагрузите страницу.';
+    const code = e && e.code;
+    sync.err = code === 'revoked' ? 'Доступ к общему дню закрыт.'
+      : code === 'permission-denied' ? 'База не пускает. Проверьте правила доступа в Firestore.'
+      : 'Общий день не обновляется. Перезагрузите страницу.';
     rerender();
+  }
+
+  // ---------- Вход на GitHub-сайте (Firebase) ----------
+  const NAME_KEY = 'zubilikha_myname';
+  let fb = null;
+  const login = { need: useFirebase, checking: useFirebase, err: '', busy: false };
+  function loadScript(src) {
+    return new Promise(function (res, rej) {
+      const el = document.createElement('script');
+      el.src = src; el.onload = res; el.onerror = function () { rej(new Error(src)); };
+      document.head.appendChild(el);
+    });
+  }
+  async function initFirebase() {
+    if (!useFirebase) return;
+    try {
+      for (const f of ['app', 'auth', 'firestore']) await loadScript('vendor/firebase/firebase-' + f + '-compat.js');
+      window.firebase.initializeApp(FIREBASE.config);
+      fb = { auth: window.firebase.auth(), db: window.firebase.firestore() };
+    } catch (e) {
+      login.checking = false; login.err = 'Не загрузилась общая база. Проверьте интернет и обновите страницу.'; render(); return;
+    }
+    fb.auth.onAuthStateChanged(function (u) {
+      login.checking = false;
+      login.need = !u;
+      if (u) { sync.me = safeGet(NAME_KEY) || ''; startSync(fb.db, 'firebase'); } else stopSync();
+      render();
+    });
+  }
+  async function doLogin() {
+    const pw = document.getElementById('loginPw');
+    const nm = document.getElementById('loginName');
+    if (nm && nm.value.trim()) safeSet(NAME_KEY, nm.value.trim());
+    if (!fb || !pw || !pw.value) { login.err = 'Введите пароль.'; render(); return; }
+    login.busy = true; login.err = ''; render();
+    try { await fb.auth.signInWithEmailAndPassword(FIREBASE.email, pw.value); }
+    catch (e) {
+      const c = (e && e.code) || '';
+      login.err = /wrong-password|invalid-credential|invalid-login|user-not-found/.test(c) ? 'Неверный пароль.'
+        : /too-many-requests/.test(c) ? 'Слишком много попыток. Подождите несколько минут.'
+        : /network/.test(c) ? 'Нет интернета.' : 'Не получилось войти: ' + (e && e.message || c);
+    }
+    login.busy = false; render();
+  }
+  async function doLogout() {
+    if (!fb) return;
+    await fb.auth.signOut();
+    // На чужом телефоне после выхода ничего не остаётся.
+    try { [KEY, BOOK_KEY, MARKS_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    day = exampleDay(); book = {}; marks = {};
+  }
+  function loginHtml() {
+    if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
+    return '<section><div class="card"><h2>Вход</h2>' +
+      '<div class="muted">Список общий для бригады. Введите пароль, который знают только свои.</div>' +
+      '<label>Пароль<input type="password" id="loginPw" autocomplete="current-password"></label>' +
+      '<label>Ваше имя (видно второму, кто правил последним)<input id="loginName" value="' + esc(safeGet(NAME_KEY) || '') + '" autocomplete="off"></label>' +
+      (login.err ? '<div class="note">' + esc(login.err) + '</div>' : '') +
+      '<div class="row"><button class="btn primary" data-act="login"' + (login.busy ? ' disabled' : '') + '>' + (login.busy ? 'Вхожу…' : 'Войти') + '</button></div>' +
+      '</div></section>';
   }
 
   function onRemoteDay(snap) {
@@ -849,6 +926,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
 
   async function resolveName() {
+    if (sync.mode === 'firebase') { sync.byName = sync.by && sync.by === sync.me ? 'вы' : (sync.by || ''); return; }
     if (!sync.by || !sync.user) { sync.byName = ''; return; }
     if (sync.by === sync.me) { sync.byName = 'вы'; return; }
     try {
@@ -888,7 +966,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       }
       sync.err = '';
     } catch (e) {
-      if (e && e.code === 'invalid_argument') { sync.readOnly = true; sync.err = 'У вас доступ только на просмотр: правки не попадут в общий день.'; }
+      if (e && (e.code === 'invalid_argument' || e.code === 'permission-denied')) { sync.readOnly = true; sync.err = 'У вас доступ только на просмотр: правки не попадут в общий день.'; }
       else if (e && e.code === 'quota_exceeded') sync.err = 'Общая база переполнена: ' + (e.message || '');
       else sync.err = 'Не получилось сохранить в общий день, попробую ещё раз при следующей правке.';
       rerender();
@@ -908,6 +986,11 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
 
   function syncCard() {
+    if (sync.on && sync.mode === 'firebase') {
+      return '<div class="card"><h2>Общий доступ</h2><div class="muted">Вы вошли. День, телефоны и отметки общие для всех, кто знает пароль. Правки второго человека появляются сами, через пару секунд.</div>' +
+        '<label>Ваше имя (видно второму)<input id="myName" value="' + esc(sync.me || '') + '" autocomplete="off"></label>' +
+        '<div class="row"><button class="btn small" data-act="logout">Выйти</button></div></div>';
+    }
     if (sync.on) {
       return '<div class="card"><h2>Общий доступ</h2><div class="muted">' +
         (sync.readOnly ? 'Вы видите общий день, но менять его не можете. Попросите владельца страницы дать вам доступ «Редактор».'
@@ -1020,8 +1103,10 @@ details > summary { cursor: pointer; font-weight: 600; }
       save();
     }
   });
+  $main.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'loginPw') doLogin(); });
   $main.addEventListener('change', function (e) {
     const t = e.target;
+    if (t.id === 'myName') { sync.me = t.value.trim(); safeSet(NAME_KEY, sync.me); return; }
     if (t.dataset.pf) {
       const p = person(t.dataset.id);
       if (!p) return;
@@ -1115,6 +1200,8 @@ details > summary { cursor: pointer; font-weight: 600; }
       case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; g.fuel = '1000'; day.gazelles.push(g); break; }
       case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
       case 'sortAll': C.sortAll(day, b.dataset.v); break;
+      case 'login': doLogin(); return;
+      case 'logout': await doLogout(); render(); return;
       case 'brigAdd': showBrig = true; render(); return;
       case 'brigDel': showBrig = false; day.brigadier = ''; break;
       case 'theme': setTheme(b.dataset.v); render(); return;
@@ -1221,5 +1308,6 @@ details > summary { cursor: pointer; font-weight: 600; }
 
   render();
   initSync();
+  initFirebase();
 })();
 </script>
