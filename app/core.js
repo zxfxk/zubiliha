@@ -459,6 +459,26 @@
     return { text: [name.charAt(0).toUpperCase() + name.slice(1) + ':'].concat(lines).concat(['Итого: Д ' + d + ', М ' + m]).join('\n'), d: d, m: m, keys: keys };
   }
 
+  // Обратно из текста: «Октябрь:» меняет месяц, строки «1- 1 Д/1м», «3-2д/2м» дают день. Год берётся из ym.
+  function parseTally(text, ym) {
+    let y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    const out = {};
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      const l = line.trim().toLowerCase();
+      const mi = MONTHS_NOM.indexOf(l.replace(/[:.\s]+$/, ''));
+      if (mi >= 0) { m = mi + 1; return; }
+      const r = /^(\d{1,2})\s*[-–—.:)]\s*(.*)$/.exec(l);
+      if (!r) return;
+      const t = { d: 0, m: 0 };
+      let hit = false;
+      r[2].replace(/(\d+)\s*([дdмm])/g, function (_, n, k) { hit = true; if (k === 'д' || k === 'd') t.d = +n; else t.m = +n; return ''; });
+      const dd = +r[1];
+      if (!hit || dd < 1 || dd > 31) return;
+      out[y + '-' + pad2(m) + '-' + pad2(dd)] = t;
+    });
+    return out;
+  }
+
   // Предупреждения перед скачиванием.
   function warnings(day) {
     const w = [];
@@ -771,7 +791,7 @@
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
+    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, parseTally: parseTally, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
