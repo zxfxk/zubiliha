@@ -92,6 +92,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
 .person .line2 .seg button { padding: 7px 8px; font-size: 12px; }
 .person .line2 .spacer { flex: 1; }
+.sorthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sorthead .btn { flex: none; }
 .chip[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
 .badge.warnb { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
@@ -775,13 +777,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function sortCard() {
     if (!day.people.length) return '';
     const seated = day.people.some(function (p) { return p.gazId && p.status !== 'refused'; });
-    return '<div class="card">' + (seated ? '<div class="muted">Порядок людей в Word, во всех газелях</div><div class="row">' +
-      '<button class="btn small" data-act="sortAll" data-v="name">Сортировать по фамилиям</button>' +
-      '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div>' : '') +
+    // «Очистить все газели» стоит отдельно в правом верхнем углу, подальше от сортировки.
+    return '<div class="card"><div class="sorthead"><div class="muted">' + (seated ? 'Порядок людей в Word, во всех газелях' : '') + '</div>' +
+      (pendingConfirm === 'clearAll' ? '' : '<button class="btn small danger" data-act="clearAll">Очистить все газели</button>') + '</div>' +
       (pendingConfirm === 'clearAll'
         ? '<div class="note">Убрать всех людей (' + day.people.length + ') из газелей и из «Без газели»?' + (sync.on ? ' Список очистится у обоих.' : '') + ' Газели, дата и настройки останутся. Копия сохранится в «Истории дня» на вкладке «День».</div>' +
           '<div class="confirm"><button class="btn danger" data-act="clearAll" data-yes="1">Очистить</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
-        : '<div class="row"><button class="btn small danger" data-act="clearAll">Очистить все газели</button></div>') +
+        : '') +
+      (seated && pendingConfirm !== 'clearAll' ? '<div class="row">' +
+      '<button class="btn small" data-act="sortAll" data-v="name">Сортировать по фамилиям</button>' +
+      '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div>' : '') +
       '</div>';
   }
 
