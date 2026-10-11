@@ -153,7 +153,8 @@
       const d = +m[1], mo = +m[2];
       if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
       if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
-      const words = fixLetters(m[3]).split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
+      const ph = extractPhone(m[3]);
+      const words = fixLetters(ph.rest).split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
       const lower = words.map(function (w) { return norm(w); });
       const flags = [];
 
@@ -217,10 +218,25 @@
       persons.forEach(function (p) {
         const f = flags.concat(p.flags);
         if (!p.initial) f.push('нет инициала');
-        people.push({ surname: p.surname, initial: p.initial, stop: stopName, kind: kind, flags: f, raw: line });
+        people.push({ surname: p.surname, initial: p.initial, stop: stopName, kind: kind, phone: persons.length === 1 ? ph.phone : '', flags: f, raw: line });
       });
     });
     return { people: people, skipped: skipped };
+  }
+
+  // Телефон в строке: +7 912 345-67-89, 89123456789, 8(912)345 67 89.
+  const PHONE_RE = /(?:\+7|\b8|\b7)[\s\-()]*\d{3}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}\b/;
+  function extractPhone(text) {
+    const m = String(text || '').match(PHONE_RE);
+    if (!m) return { phone: '', rest: text };
+    return { phone: formatPhone(m[0]), rest: text.replace(m[0], ' ') };
+  }
+  function formatPhone(s) {
+    const d = String(s || '').replace(/\D/g, '');
+    if (d.length === 11 && (d[0] === '7' || d[0] === '8')) {
+      return '+7 ' + d.slice(1, 4) + ' ' + d.slice(4, 7) + '-' + d.slice(7, 9) + '-' + d.slice(9, 11);
+    }
+    return String(s || '').trim();
   }
 
   // ---------- склонение «Фамилия И» в винительный падеж ----------
@@ -263,7 +279,8 @@
   function uid() { return Math.random().toString(36).slice(2, 10); }
 
   function newGazelle(n) {
-    return { id: uid(), kind: 'Поле', number: '', letter: '', capacity: 19, departure: '', pay: '', start: '', end: '', work: '', reminder: '', contact: '' };
+    // kind: Поле | Цех | Цех/поле; vehicle: газель | машина (carName — марка машины).
+    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', reminder: '', contact: '' };
   }
 
   function newDay() {
@@ -273,7 +290,7 @@
       date: t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()),
       brigadier: '',
       place: 'Зубилиха',
-      defaults: { departure: '4.50', pay: '4500', start: '06-00', end: '18-00', work: 'Уборка пекинки', reminder: 'НОЖИ С СОБОЙ! ОБЯЗАТЕЛЬНО!' },
+      defaults: { departure: '4.50', pay: '4500', start: '06-00', end: '18-00', work: 'Уборка пекинки', payShop: '', reminder: 'НОЖИ С СОБОЙ! ОБЯЗАТЕЛЬНО!' },
       gazelles: [newGazelle(), newGazelle(), newGazelle()],
       people: [],
       replaceField: '-',
@@ -295,8 +312,40 @@
 
   function personLabel(p) { return [p.surname, p.initial].filter(Boolean).join(' '); }
 
+  // Куда на самом деле едет человек: у сборной газели — по его отметке цех/поле.
+  function kindOf(g, p) {
+    if (g.kind === 'Цех/поле') return p.kind === 'цех' ? 'Цех' : 'Поле';
+    return g.kind === 'Цех' ? 'Цех' : 'Поле';
+  }
+
+  // Оплата для поля или цеха (у цеха своя, если задана).
+  function payFor(day, g, kind) {
+    if (kind === 'Цех') return gz(day, g, 'payShop') || gz(day, g, 'pay');
+    return gz(day, g, 'pay');
+  }
+
+  // Люди газели в порядке списка; у сборной сначала цех, потом поле.
   function peopleOf(day, g) {
-    return day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; });
+    const list = day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; });
+    if (g.kind !== 'Цех/поле') return list;
+    return list.filter(function (p) { return p.kind === 'цех'; }).concat(list.filter(function (p) { return p.kind !== 'цех'; }));
+  }
+
+  function byAlpha(a, b) {
+    return personLabel(a).localeCompare(personLabel(b), 'ru', { sensitivity: 'base' });
+  }
+
+  // Сортирует по алфавиту людей одной газели (или «без газели» при gazId = ''), остальных не трогает.
+  function sortAlpha(day, gazId) {
+    const inGroup = function (p) { return (p.gazId || '') === (gazId || '') && p.status !== 'refused'; };
+    const sorted = day.people.filter(inGroup).sort(byAlpha);
+    let k = 0;
+    day.people = day.people.map(function (p) { return inGroup(p) ? sorted[k++] : p; });
+  }
+
+  function vehicleCounts(day) {
+    const cars = day.gazelles.filter(function (g) { return g.vehicle === 'машина'; }).length;
+    return { gaz: day.gazelles.length - cars, cars: cars };
   }
 
   function stopSummary(day, g, stops) {
@@ -318,9 +367,8 @@
   function wentPeople(day, kind) {
     const out = [];
     day.gazelles.forEach(function (g) {
-      if (kind && g.kind !== kind) return;
-      day.people.forEach(function (p) {
-        if (p.gazId === g.id && p.status === 'ok') out.push({ p: p, g: g });
+      peopleOf(day, g).forEach(function (p) {
+        if (p.status === 'ok' && (!kind || kindOf(g, p) === kind)) out.push({ p: p, g: g });
       });
     });
     return out;
@@ -331,9 +379,13 @@
     const t = day.latinNames ? translit : function (s) { return String(s || '').replace(/[\\/:*?"<>|\s]+/g, ''); };
     const brig = t(day.brigadier) || (day.latinNames ? 'Brigadir' : 'Бригадир');
     const place = t(day.place);
-    const n = day.gazelles.length;
+    const vc = vehicleCounts(day);
     const went = wentPeople(day).length;
-    const gaz = day.latinNames ? n + 'gazel' + (n === 1 ? '' : n < 5 ? 'i' : 'ey') : n + (n === 1 ? 'газель' : n < 5 ? 'газели' : 'газелей');
+    const plural = function (n, one, few, many) { return n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many; };
+    const parts = [];
+    if (vc.gaz) parts.push(vc.gaz + (day.latinNames ? plural(vc.gaz, 'gazel', 'gazeli', 'gazeley') : plural(vc.gaz, 'газель', 'газели', 'газелей')));
+    if (vc.cars) parts.push(vc.cars + (day.latinNames ? plural(vc.cars, 'mashina', 'mashiny', 'mashin') : plural(vc.cars, 'машина', 'машины', 'машин')));
+    const gaz = parts.join('_');
     const word = [pad2(dp.d), pad2(dp.m), gaz, brig, place].filter(Boolean).join('_') + '.docx';
     const xls = [pad2(dp.d), pad2(dp.m), dp.y, day.latinNames ? 'brigada' : 'бригада', brig, went + (day.latinNames ? 'chel' : 'чел')].join('_') + '.xlsx';
     return { word: word, excel: xls };
@@ -347,8 +399,9 @@
     day.gazelles.forEach(function (g, i) {
       const n = peopleOf(day, g).length;
       const cap = +g.capacity || 0;
-      if (n > cap) w.push('Газель ' + (i + 1) + ': ' + n + ' чел. при ' + cap + ' местах.');
-      if (!String(g.number).trim()) w.push('Газель ' + (i + 1) + ': не указан номер.');
+      const name = (g.vehicle === 'машина' ? 'Машина ' : 'Газель ') + (i + 1);
+      if (n > cap) w.push(name + ': ' + n + ' чел. при ' + cap + ' местах.');
+      if (!String(g.number).trim() && !String(g.carName || '').trim()) w.push(name + ': не указан номер.');
     });
     const flagged = day.people.filter(function (p) { return p.flags && p.flags.length && p.status !== 'refused'; });
     if (flagged.length) w.push('Проверить: ' + flagged.length + ' чел.');
@@ -367,7 +420,7 @@
     DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
-    newDay: newDay, newGazelle: newGazelle, gz: gz, hh: hh, personLabel: personLabel,
+    newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, sortAlpha: sortAlpha, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
     peopleOf: peopleOf, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
   };
   root.Core = Core;

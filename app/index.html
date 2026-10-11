@@ -91,6 +91,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
 .person .line2 .seg button { padding: 7px 8px; font-size: 12px; }
 .person .line2 .spacer { flex: 1; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
+.phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.phone a { color: var(--accent); text-decoration: none; }
+.more { padding-left: 30px; display: flex; gap: 6px; align-items: center; }
+.more input { flex: 1 1 auto; padding: 7px 8px; font-size: 15px; }
+.sublabel { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); padding-top: 4px; }
 .iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; width: 34px; height: 32px; font-size: 15px; }
 .flag { padding-left: 30px; font-size: 13px; color: var(--warn); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .flag code { font-family: inherit; color: var(--muted); }
@@ -139,6 +145,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   // ---------- состояние ----------
   let day = load() || exampleDay();
   let tab = safeGet(TAB_KEY) || 'people';
+  const openRows = new Set();
   let parseReport = null;
   let pendingConfirm = null;
 
@@ -151,7 +158,8 @@ details > summary { cursor: pointer; font-weight: 600; }
     const base = C.newDay();
     d = Object.assign({}, base, d);
     d.defaults = Object.assign({}, base.defaults, d.defaults || {});
-    d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '' }, p); });
+    d.gazelles = (d.gazelles || []).map(function (g) { return Object.assign(C.newGazelle(), g); });
+    d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
   function save() { safeSet(KEY, JSON.stringify(day)); updateTop(); }
@@ -160,15 +168,19 @@ details > summary { cursor: pointer; font-weight: 600; }
     const d = C.newDay();
     d.example = true;
     d.brigadier = 'Петров';
-    const spec = [['457', 'Д', 19], ['601', 'М', 18], ['364', 'М', 19]];
+    const spec = [['457', 'Д', 19], ['601', 'М', 18], ['685', '', 5]];
     d.gazelles.forEach(function (g, i) { g.number = spec[i][0]; g.letter = spec[i][1]; g.capacity = spec[i][2]; });
+    d.gazelles[1].kind = 'Цех/поле';
+    d.gazelles[1].payShop = '3000';
+    d.gazelles[2].vehicle = 'машина';
+    d.gazelles[2].carName = 'тойота королла';
     const names = ['Абрамов А', 'Белова Б', 'Воронин В', 'Гаврилова Г', 'Данилов Д', 'Ефимова Е', 'Жуков Ж', 'Зайцева З', 'Ильин И', 'Ковалева К',
       'Лаптев Л', 'Миронова М', 'Носков Н', 'Орлова О', 'Панов П', 'Рябова Р', 'Соколов С', 'Титова Т', 'Уткин У', 'Фомина Ф', 'Хохлов Х', 'Цветкова Ц'];
     const stops = ['Леспромхоз', 'Пурех 5ка', 'Рынок', '3шк', 'Художка', 'Стекляшка', 'Фрунзе/Пионерская', 'Шалдеж'];
     names.forEach(function (n, i) {
-      const g = d.gazelles[i < 9 ? 0 : i < 16 ? 1 : 2];
+      const g = d.gazelles[i < 9 ? 0 : i < 17 ? 1 : 2];
       const st = i < 9 ? stops[i % 4] : stops[4 + (i % 4)];
-      d.people.push({ id: C.uid(), surname: n.split(' ')[0], initial: n.split(' ')[1], stop: st, kind: 'поле', gazId: g.id, status: i === 5 || i === 12 ? 'noshow' : 'ok', flags: [] });
+      d.people.push({ id: C.uid(), surname: n.split(' ')[0], initial: n.split(' ')[1], stop: st, kind: i >= 9 && i < 12 ? 'цех' : 'поле', phone: i === 1 ? '+7 900 000-00-00' : '', gazId: g.id, status: i === 5 || i === 12 ? 'noshow' : 'ok', flags: [] });
     });
     d.gazelles[0].contact = C.accusative('Данилов Д');
     d.zp = 'поле: ' + C.accusative('Белова Б');
@@ -180,7 +192,11 @@ details > summary { cursor: pointer; font-weight: 600; }
   function gById(id) { return day.gazelles.find(function (g) { return g.id === id; }); }
   function gTitle(g) {
     const i = day.gazelles.indexOf(g);
+    if (g.vehicle === 'машина') return (i + 1) + '. ' + g.kind + ', ' + ((g.carName || 'машина') + ' ' + (g.number || '')).trim();
     return (i + 1) + '. ' + g.kind + (g.number ? ' №' + g.number : '') + (g.letter ? ' ' + g.letter : '');
+  }
+  function gShort(g, gi) {
+    return (gi + 1) + (g.vehicle === 'машина' ? 'М' : g.kind === 'Цех' ? 'Ц' : g.kind === 'Цех/поле' ? 'ЦП' : 'П');
   }
   function splitName(text) {
     const parts = String(text || '').trim().replace(/\./g, ' ').split(/\s+/).filter(Boolean);
@@ -245,6 +261,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<div class="grid3">' +
       field('Выезд в', 'defaults.departure', d.departure, 'inputmode="decimal"') +
       field('Оплата', 'defaults.pay', d.pay, 'inputmode="numeric"') +
+      field('Оплата цех', 'defaults.payShop', d.payShop, 'inputmode="numeric" placeholder="как поле"') +
       field('Начало', 'defaults.start', d.start) +
       field('Конец', 'defaults.end', d.end) +
       '</div>' +
@@ -293,19 +310,23 @@ details > summary { cursor: pointer; font-weight: 600; }
       h += '<div class="card">' +
         '<div class="ghead"><h2>' + esc(gTitle(g)) + '</h2><span class="count' + (over ? ' over' : '') + '">' + n + ' / ' + (+g.capacity || 0) + '</span></div>' +
         '<div class="row"><div class="seg" role="group" aria-label="Куда едет">' +
-        ['Поле', 'Цех'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
+        ['Поле', 'Цех', 'Цех/поле'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
+        '</div><div class="seg" role="group" aria-label="Транспорт">' +
+        ['газель', 'машина'].map(function (k) { return '<button data-act="gVehicle" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + ((g.vehicle || 'газель') === k) + '">' + (k === 'газель' ? 'Газель' : 'Машина') + '</button>'; }).join('') +
         '</div><span class="grow"></span>' +
         '<button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше">↑</button>' +
         '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже">↓</button></div>' +
         '<div class="grid3">' +
-        field('Номер', pre + 'number', g.number, 'inputmode="numeric"') +
-        field('Буква', pre + 'letter', g.letter) +
+        (g.vehicle === 'машина'
+          ? field('Марка', pre + 'carName', g.carName, 'placeholder="тойота королла"') + field('Номер', pre + 'number', g.number, 'inputmode="numeric"')
+          : field('Номер', pre + 'number', g.number, 'inputmode="numeric"') + field('Буква', pre + 'letter', g.letter)) +
         field('Мест', pre + 'capacity', g.capacity, 'type="number" inputmode="numeric" min="1"') +
         '</div>' +
-        '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'start', 'end', 'work', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
+        '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'payShop', 'start', 'end', 'work', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
         '<div class="grid3" style="margin-top:10px">' +
         field('Выезд в', pre + 'departure', g.departure, 'placeholder="' + esc(d.departure) + '"') +
-        field('Оплата', pre + 'pay', g.pay, 'placeholder="' + esc(d.pay) + '"') +
+        field(g.kind === 'Поле' ? 'Оплата' : 'Оплата поле', pre + 'pay', g.pay, 'placeholder="' + esc(d.pay) + '"') +
+        (g.kind !== 'Поле' ? field('Оплата цех', pre + 'payShop', g.payShop, 'placeholder="' + esc(d.payShop || d.pay) + '"') : '') +
         field('Начало', pre + 'start', g.start, 'placeholder="' + esc(d.start) + '"') +
         field('Конец', pre + 'end', g.end, 'placeholder="' + esc(d.end) + '"') +
         '</div>' +
@@ -320,7 +341,7 @@ details > summary { cursor: pointer; font-weight: 600; }
           : '<div class="row"><button class="btn danger small" data-act="gDel" data-i="' + i + '">Удалить газель</button></div>') +
         '</div>';
     });
-    h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button></div></section>';
+    h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button><button class="btn" data-act="gAddCar">Добавить машину</button></div></section>';
     return h;
   }
 
@@ -335,14 +356,14 @@ details > summary { cursor: pointer; font-weight: 600; }
       (parseReport ? parseReport : '') +
       '</div>';
 
-    const groups = day.gazelles.map(function (g) { return { g: g, list: day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; }) }; });
+    const groups = day.gazelles.map(function (g) { return { g: g, list: C.peopleOf(day, g) }; });
     const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
 
     if (none.length || !day.people.length) {
       h += '<div class="card"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
       if (none.length) {
-        h += '<div class="row"><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
+        h += '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="">А–Я</button><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
           day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') + '</select></div>';
       } else {
         h += '<div class="muted">Пока никого. Вставьте сообщения из ВК выше или добавьте человека вручную.</div>';
@@ -358,7 +379,15 @@ details > summary { cursor: pointer; font-weight: 600; }
       h += '<div class="card"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
-        x.list.map(function (p, i) { return personRow(p, i + 1); }).join('') +
+        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button></div>' : '') +
+        x.list.map(function (p, i) {
+          let label = '';
+          if (x.g.kind === 'Цех/поле') {
+            const k = C.kindOf(x.g, p);
+            if (i === 0 || C.kindOf(x.g, x.list[i - 1]) !== k) label = '<div class="sublabel">' + (k === 'Цех' ? 'Цех' : 'Поле') + '</div>';
+          }
+          return label + personRow(p, i + 1);
+        }).join('') +
         '<div class="row"><button class="btn small" data-act="pAdd" data-g="' + x.g.id + '">Добавить человека</button></div></div>';
     });
 
@@ -383,16 +412,24 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
       '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
-      day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + (gi + 1) + (g.kind === 'Цех' ? 'Ц' : 'П') + '</option>'; }).join('') + '</select></div>' +
+      day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') + '</select></div>' +
+      (p.phone && !openRows.has(p.id) ? '<div class="phone">☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a></div>' : '') +
       '<div class="line2">' +
       '<div class="seg" role="group" aria-label="Статус">' +
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
         return '<button class="st-' + s[0] + '" data-act="pStatus" data-id="' + p.id + '" data-v="' + s[0] + '" aria-pressed="' + (st === s[0]) + '">' + s[1] + '</button>';
       }).join('') + '</div>' +
-      '<span class="spacer"></span><button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
-      '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
-      '<button class="iconbtn" data-act="pDel" data-id="' + p.id + '" aria-label="Удалить">✕</button>' +
-      '</div>' + flags + '</div>';
+      '<span class="spacer"></span>' +
+      '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' +
+      '<button class="iconbtn" data-act="pMore" data-id="' + p.id + '" aria-label="Ещё" aria-expanded="' + openRows.has(p.id) + '">⋯</button>' +
+      '</div>' +
+      (openRows.has(p.id)
+        ? '<div class="more"><input type="tel" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">' +
+          '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
+          '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
+          '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>'
+        : '') +
+      flags + '</div>';
   }
 
   // ---------- Файлы ----------
@@ -521,6 +558,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       const p = person(t.dataset.id);
       if (!p) return;
       if (t.dataset.pf === 'name') Object.assign(p, splitName(t.value));
+      else if (t.dataset.pf === 'phone') p.phone = C.formatPhone(t.value);
       else {
         const s = t.value.trim() ? C.findStopByText(t.value, stopsList()) : null;
         p.stop = s ? s.name : t.value.trim();
@@ -569,6 +607,18 @@ details > summary { cursor: pointer; font-weight: 600; }
       }
       case 'importJson': document.getElementById('fileOpen').click(); return;
       case 'gKind': day.gazelles[i].kind = b.dataset.v; break;
+      case 'gVehicle': {
+        const g = day.gazelles[i];
+        if ((g.vehicle || 'газель') === b.dataset.v) return;
+        g.vehicle = b.dataset.v;
+        if (g.vehicle === 'машина' && +g.capacity >= 10) g.capacity = 5;
+        if (g.vehicle === 'газель' && +g.capacity < 10) g.capacity = 19;
+        break;
+      }
+      case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; day.gazelles.push(g); break; }
+      case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'pKind': { const p = person(id); p.kind = p.kind === 'цех' ? 'поле' : 'цех'; break; }
+      case 'pMore': if (openRows.has(id)) openRows.delete(id); else openRows.add(id); render(); return;
       case 'gUp': case 'gDown': {
         const j = act === 'gUp' ? i - 1 : i + 1;
         if (j < 0 || j >= day.gazelles.length) return;
@@ -593,7 +643,7 @@ details > summary { cursor: pointer; font-weight: 600; }
           const k = C.norm(C.personLabel(x));
           if (existing[k]) { dup.push(C.personLabel(x)); return; }
           existing[k] = true;
-          day.people.push({ id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, gazId: '', status: 'ok', flags: x.flags, raw: x.raw });
+          day.people.push({ id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw });
           added++;
         });
         const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
@@ -606,7 +656,11 @@ details > summary { cursor: pointer; font-weight: 600; }
           (bad.length ? '<br>Не разобрал: ' + bad.map(function (s) { return '«' + esc(s.raw) + '»'; }).join(', ') : '') + '</div>';
         break;
       }
-      case 'pAdd': day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: 'поле', gazId: b.dataset.g, status: 'ok', flags: [] }); break;
+      case 'pAdd': {
+        const g = gById(b.dataset.g);
+        day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: g && g.kind === 'Цех' ? 'цех' : 'поле', phone: '', gazId: b.dataset.g, status: 'ok', flags: [] });
+        break;
+      }
       case 'pStatus': { const p = person(id); const was = p.status; p.status = b.dataset.v; if ((was === 'refused') !== (p.status === 'refused')) toEnd(p); break; }
       case 'pUp': moveWithin(person(id), -1); break;
       case 'pDown': moveWithin(person(id), 1); break;

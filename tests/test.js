@@ -78,5 +78,36 @@ assert.deepStrictEqual(C.fileNames(day), {
   assert.strictEqual(ws.getCell('H38').value, '4500 × 32 = 144000');
   assert.strictEqual(ws.getCell('B11').value, '4500 × 5 = 22500');
   await wb.xlsx.writeBuffer();
+
+  // Сборная газель цех/поле и машина.
+  const d2 = C.newDay();
+  d2.date = '2026-09-22';
+  d2.brigadier = 'Тестов';
+  d2.gazelles = [C.newGazelle(), C.newGazelle()];
+  const [mix, car] = d2.gazelles;
+  mix.kind = 'Цех/поле'; mix.number = '601'; mix.capacity = 18; mix.payShop = '3000'; mix.pay = '3500';
+  car.vehicle = 'машина'; car.carName = 'тойота королла'; car.number = '685'; car.capacity = 5;
+  const add = (s, g, kind, status) => d2.people.push({ id: C.uid(), surname: s, initial: 'А', stop: 'Рынок', kind, gazId: g.id, status: status || 'ok', flags: [] });
+  add('Поляков', mix, 'поле'); add('Цехова', mix, 'цех'); add('Яковлев', mix, 'цех'); add('Водилов', car, 'поле');
+  assert.deepStrictEqual(C.peopleOf(d2, mix).map((p) => p.surname), ['Цехова', 'Яковлев', 'Поляков']);
+  assert.strictEqual(C.fileNames(d2).word, '22_09_1gazel_1mashina_Testov_Zubilikha.docx');
+  const ws2 = Gen.buildExcel(d2, ExcelJS).worksheets[0];
+  assert.strictEqual(ws2.getCell('B5').value, 'Цехова А');
+  assert.strictEqual(ws2.getCell('F5').value, 3000);
+  assert.strictEqual(ws2.getCell('H5').value, 'Поляков А');
+  assert.strictEqual(ws2.getCell('L5').value, 3500);
+  assert.strictEqual(ws2.getCell('H6').value, 'Водилов А');
+  assert.strictEqual(ws2.getCell('L6').value, 4500);
+  assert.strictEqual(ws2.getCell('H8').value, 'Итого: 8000');
+  await D.Packer.toBuffer(Gen.buildWord(d2, D));
+
+  C.sortAlpha(d2, mix.id);
+  assert.deepStrictEqual(d2.people.filter((p) => p.gazId === mix.id).map((p) => p.surname), ['Поляков', 'Цехова', 'Яковлев']);
+
+  const r2 = C.parseVk('22.09 Иванова А рынок поле 8 912 345-67-89', 22, 9, stops);
+  assert.strictEqual(r2.people[0].phone, '+7 912 345-67-89');
+  assert.strictEqual(r2.people[0].stop, 'Рынок');
+  assert.deepStrictEqual(r2.people[0].flags, []);
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });

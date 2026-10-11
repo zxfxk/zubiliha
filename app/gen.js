@@ -36,7 +36,9 @@
     // Строка 1: заголовки газелей.
     const head = [cell([para([run('№')])], numW)].concat(gs.map(function (g, i) {
       const letter = String(g.letter || '').trim();
-      const pay = Core.gz(day, g, 'pay');
+      const payField = Core.payFor(day, g, 'Поле');
+      const payShop = Core.payFor(day, g, 'Цех');
+      const pay = g.kind === 'Цех/поле' ? (payShop === payField ? payField : 'цех ' + payShop + ' / поле ' + payField) : Core.payFor(day, g, g.kind);
       const hours = Core.hh(Core.gz(day, g, 'start')) + '-' + Core.hh(Core.gz(day, g, 'end')) + ' р.д.';
       const work = Core.gz(day, g, 'work');
       const reminder = Core.gz(day, g, 'reminder');
@@ -47,8 +49,8 @@
       }
       return cell([
         para([
-          run((i + 1) + '. ' + (g.kind || 'Поле') + ', газель ', { bold: true }),
-          run('№' + String(g.number || '').trim(), { bold: true, size: 24 }),
+          run((i + 1) + '. ' + (g.kind || 'Поле') + ', ' + (g.vehicle === 'машина' ? (String(g.carName || '').trim() || 'машина') + ' ' : 'газель '), { bold: true }),
+          run((g.vehicle === 'машина' ? '' : '№') + String(g.number || '').trim(), { bold: true, size: 24 }),
           run((letter ? ' ' + letter : '') + ' (' + (+g.capacity || 0) + 'м)', { bold: true }),
         ]),
         para([run('выезд в ' + dot(Core.gz(day, g, 'departure')), { bold: true, color: RED })]),
@@ -68,7 +70,13 @@
         let p;
         if (r <= list.length) {
           const person = list[r - 1];
-          const text = [Core.personLabel(person), person.stop].filter(Boolean).join(' ');
+          let text = [Core.personLabel(person), person.stop].filter(Boolean).join(' ');
+          // У сборной газели перед первым цеховым и первым полевым — подпись.
+          if (g.kind === 'Цех/поле') {
+            const k = Core.kindOf(g, person);
+            const prev = list[r - 2];
+            if (!prev || Core.kindOf(g, prev) !== k) text = (k === 'Цех' ? 'ЦЕХ: ' : 'Поле: ') + text;
+          }
           p = para([run(text, person.status === 'noshow' ? { size: 20, highlight: 'yellow' } : { size: 20 })]);
         } else if (r <= cap) {
           p = para([run('СВОБОДНОЕ МЕСТО', { size: 20, highlight: 'yellow' })]);
@@ -173,7 +181,7 @@
           work: lowerFirst(Core.gz(day, x.g, 'work')),
           start: Core.gz(day, x.g, 'start'),
           end: Core.gz(day, x.g, 'end'),
-          pay: payNum(own || Core.gz(day, x.g, 'pay')),
+          pay: payNum(own || Core.payFor(day, x.g, kind)),
         };
       });
     };
