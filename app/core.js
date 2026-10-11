@@ -427,12 +427,183 @@
     return w;
   }
 
+  // ---------- этап 2: распределение по газелям ----------
+
+  // Зона остановки: обычная (по маршруту) или «в любую газель» (деревни и неизвестные остановки).
+  function stopInfo(name, stops) {
+    const n = String(name || '').trim();
+    if (!n) return null;
+    return stops.find(function (s) { return s.name === n; }) || stops.find(function (s) { return norm(s.name) === norm(n); }) || null;
+  }
+  function isFlexZone(zone) { return /любую|деревн/i.test(zone || ''); }
+
+  // Раскладывает людей по газелям (машины не трогает: туда сажают вручную).
+  // mode 'all' — всех заново, 'free' — только тех, кто без газели.
+  // Цех едет в цеховые газели, потом в сборные; поле — в полевые и в остаток сборных.
+  // Каждая зона по возможности в своей газели, деревни — вместе туда, где больше мест.
+  // Люди из одной строки ВК не разделяются.
+  function autoAssign(day, stops, mode) {
+    const vans = day.gazelles.filter(function (g) { return g.vehicle !== 'машина'; });
+    const vanIds = {};
+    vans.forEach(function (g) { vanIds[g.id] = true; });
+    const known = {};
+    day.gazelles.forEach(function (g) { known[g.id] = true; });
+    const active = day.people.filter(function (p) { return p.status !== 'refused'; });
+    const todo = active.filter(function (p) {
+      if (!known[p.gazId]) return true;
+      return mode === 'all' && vanIds[p.gazId];
+    });
+    todo.forEach(function (p) { p.gazId = ''; });
+
+    const free = {};
+    vans.forEach(function (g) {
+      free[g.id] = (+g.capacity || 0) - active.filter(function (p) { return p.gazId === g.id; }).length;
+    });
+    const zonesIn = {}; // gazId -> {zoneKey: count}
+    vans.forEach(function (g) {
+      zonesIn[g.id] = {};
+      active.forEach(function (p) { if (p.gazId === g.id) addZone(g.id, unitZone(p), 1); });
+    });
+    function unitZone(p) {
+      const s = stopInfo(p.stop, stops);
+      if (!s) return { key: '?', flex: true, order: 9999 };
+      return { key: s.zone, flex: isFlexZone(s.zone), order: s.order };
+    }
+    function addZone(gid, z, n) { const k = (z.flex ? '*' : '') + z.key; zonesIn[gid][k] = (zonesIn[gid][k] || 0) + n; }
+
+    // Единицы: люди из одной строки ВК с одним видом работы.
+    const units = [];
+    const byKey = {};
+    todo.forEach(function (p, i) {
+      const kind = p.kind === 'цех' ? 'цех' : 'поле';
+      const key = p.raw ? kind + '|' + p.raw : 'p' + i;
+      if (!byKey[key]) { byKey[key] = { people: [], kind: kind, zone: unitZone(p), idx: i }; units.push(byKey[key]); }
+      byKey[key].people.push(p);
+    });
+    const byRoute = function (a, b) { return a.zone.order - b.zone.order || a.idx - b.idx; };
+
+    function put(u, g) {
+      u.people.forEach(function (p) { p.gazId = g.id; });
+      free[g.id] -= u.people.length;
+      addZone(g.id, u.zone, u.people.length);
+    }
+
+    // В газель, где уже есть эта зона; деревни — лучше к людям, чем в пустую газель, остальные — наоборот.
+    function placeFlex(list, pool) {
+      const left = [];
+      list.sort(byRoute).forEach(function (u) {
+        const n = u.people.length;
+        const fit = pool.filter(function (g) { return free[g.id] >= n; });
+        if (!fit.length) { left.push(u); return; }
+        const k = (u.zone.flex ? '*' : '') + u.zone.key;
+        const used = function (g) { return Object.keys(zonesIn[g.id]).some(function (x) { return zonesIn[g.id][x] > 0; }) ? 1 : 0; };
+        fit.sort(function (a, b) {
+          return (zonesIn[b.id][k] || 0) - (zonesIn[a.id][k] || 0) || (u.zone.flex ? used(b) - used(a) : used(a) - used(b)) || free[b.id] - free[a.id];
+        });
+        put(u, fit[0]);
+      });
+      return left;
+    }
+
+    // Только новые: каждого в газель, где уже есть его зона, иначе где больше мест.
+    function placeEach(list, pool) {
+      const reg = list.filter(function (u) { return !u.zone.flex; });
+      const left = placeFlex(reg, pool);
+      return left.concat(placeFlex(list.filter(function (u) { return u.zone.flex; }), pool));
+    }
+
+    // Всех заново: газели делятся между зонами, внутри зоны люди идут по маршруту.
+    function placeAll(list, pool) {
+      pool = pool.filter(function (g) { return free[g.id] > 0; });
+      const reg = list.filter(function (u) { return !u.zone.flex; }).sort(byRoute);
+      const flex = list.filter(function (u) { return u.zone.flex; });
+      const zones = [];
+      const demand = {};
+      reg.forEach(function (u) {
+        if (!(u.zone.key in demand)) { demand[u.zone.key] = 0; zones.push(u.zone.key); }
+        demand[u.zone.key] += u.people.length;
+      });
+      // Сколько газелей нужно каждой зоне.
+      const share = {};
+      let rest = pool.slice();
+      let fits = true;
+      zones.forEach(function (z) {
+        share[z] = [];
+        let cap = 0;
+        while (cap < demand[z] && rest.length) { const g = rest.shift(); share[z].push(g); cap += free[g.id]; }
+        if (cap < demand[z]) fits = false;
+      });
+      if (fits) {
+        // Лишние газели — зонам, где теснее всего.
+        while (rest.length && zones.length) {
+          const load = function (z) { return demand[z] / share[z].reduce(function (a, g) { return a + free[g.id]; }, 0); };
+          const z = zones.slice().sort(function (a, b) { return load(b) - load(a); })[0];
+          if (demand[z] <= share[z].length) break;
+          share[z].push(rest.shift());
+        }
+      } else {
+        // Мест по зонам не хватает: заполняем газели подряд по маршруту.
+        zones.length = 0; zones.push('*all');
+        demand['*all'] = reg.reduce(function (a, u) { return a + u.people.length; }, 0);
+        share['*all'] = pool.slice();
+      }
+      let left = [];
+      zones.forEach(function (z) {
+        const units = z === '*all' ? reg : reg.filter(function (u) { return u.zone.key === z; });
+        const vs = share[z];
+        const total = vs.reduce(function (a, g) { return a + free[g.id]; }, 0);
+        let vi = 0, inVan = 0, lastStop = null;
+        units.forEach(function (u) {
+          const n = u.people.length;
+          while (vi < vs.length) {
+            const g = vs[vi];
+            const target = vi === vs.length - 1 ? Infinity : Math.round(demand[z] * (free[g.id] + inVan) / total);
+            // Одну остановку не делим между газелями, пока есть место.
+            if (free[g.id] >= n && (inVan + n <= target || inVan === 0 || u.zone.order === lastStop)) break;
+            vi++; inVan = 0; lastStop = null;
+          }
+          if (vi >= vs.length) {
+            // Не влезло подряд — ищем любое место среди газелей зоны.
+            const g = vs.filter(function (x) { return free[x.id] >= n; })[0];
+            if (g) put(u, g); else left.push(u);
+            return;
+          }
+          put(u, vs[vi]); inVan += n; lastStop = u.zone.order;
+        });
+      });
+      return left.concat(placeFlex(flex, pool));
+    }
+
+    const place = mode === 'all' ? placeAll : placeEach;
+    const shopVans = vans.filter(function (g) { return g.kind === 'Цех'; });
+    const mixVans = vans.filter(function (g) { return g.kind === 'Цех/поле'; });
+    const fieldVans = vans.filter(function (g) { return g.kind !== 'Цех' && g.kind !== 'Цех/поле'; });
+    const shopUnits = units.filter(function (u) { return u.kind === 'цех'; });
+    const fieldUnits = units.filter(function (u) { return u.kind !== 'цех'; });
+    let left = place(shopUnits, shopVans);
+    left = place(left, mixVans);
+    left = left.concat(place(fieldUnits, fieldVans.concat(mixVans)));
+
+    const leftPeople = [];
+    left.forEach(function (u) { u.people.forEach(function (p) { leftPeople.push(p); }); });
+    return {
+      placed: todo.length - leftPeople.length,
+      left: leftPeople,
+      vans: vans.map(function (g) {
+        const z = zonesIn[g.id];
+        return { g: g, zones: Object.keys(z).filter(function (k) { return z[k] > 0; }).map(function (k) {
+          return { zone: k === '*?' ? 'без остановки в справочнике' : k.replace(/^\*/, ''), count: z[k] };
+        }) };
+      }),
+    };
+  }
+
   const Core = {
     DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
+    peopleOf: peopleOf, autoAssign: autoAssign, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
