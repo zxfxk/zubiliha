@@ -298,7 +298,8 @@
       zp: '',
       footer: '**Без ножей - возвращают домой**',
       stopsText: DEFAULT_STOPS,
-      latinNames: true,
+      latinNames: false,
+      namesV2: true, // имена файлов кириллицей по умолчанию
       rate: 200, // нам за каждого вышедшего, ₽ — только справка на странице
     };
   }
@@ -396,21 +397,16 @@
     return out;
   }
 
+  // Имена файлов: дата, число людей, место. В Word — все, кто в газелях, в Excel — кто вышел.
   function fileNames(day) {
     const dp = dateParts(day.date) || { y: 0, m: 0, d: 0 };
     const t = day.latinNames ? translit : function (s) { return String(s || '').replace(/[\\/:*?"<>|\s]+/g, ''); };
-    const brig = t(day.brigadier);
     const place = t(day.place);
-    const vc = vehicleCounts(day);
+    const chel = day.latinNames ? 'chel' : 'чел';
+    const listed = day.gazelles.reduce(function (n, g) { return n + peopleOf(day, g).length; }, 0);
     const went = wentPeople(day).length;
-    const plural = function (n, one, few, many) { return n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many; };
-    const parts = [];
-    if (vc.gaz) parts.push(vc.gaz + (day.latinNames ? plural(vc.gaz, 'gazel', 'gazeli', 'gazeley') : plural(vc.gaz, 'газель', 'газели', 'газелей')));
-    if (vc.cars) parts.push(vc.cars + (day.latinNames ? plural(vc.cars, 'mashina', 'mashiny', 'mashin') : plural(vc.cars, 'машина', 'машины', 'машин')));
-    const gaz = parts.join('_');
-    const word = [pad2(dp.d), pad2(dp.m), gaz, brig, place].filter(Boolean).join('_') + '.docx';
-    const xls = [pad2(dp.d), pad2(dp.m), dp.y, day.latinNames ? 'brigada' : 'бригада', brig, went + (day.latinNames ? 'chel' : 'чел')].filter(Boolean).join('_') + '.xlsx';
-    return { word: word, excel: xls };
+    const name = function (n) { return [pad2(dp.d), pad2(dp.m), n + chel, place].filter(Boolean).join('_'); };
+    return { word: name(listed) + '.docx', excel: name(went) + '.xlsx' };
   }
 
   // Предупреждения перед скачиванием.
