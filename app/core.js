@@ -299,6 +299,7 @@
       footer: '**Без ножей - возвращают домой**',
       stopsText: DEFAULT_STOPS,
       latinNames: true,
+      rate: 200, // нам за каждого вышедшего, ₽ — только справка на странице
     };
   }
 
@@ -332,7 +333,11 @@
 
   // Люди газели в порядке списка; у сборной сначала цех, потом поле.
   function peopleOf(day, g) {
-    const list = day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; });
+    let list = day.people.filter(function (p) { return p.gazId === g.id && p.status !== 'refused'; });
+    if (g.vehicle === 'машина') {
+      // Водитель всегда первым.
+      list = list.filter(function (p) { return p.driver; }).concat(list.filter(function (p) { return !p.driver; }));
+    }
     if (g.kind !== 'Цех/поле') return list;
     return list.filter(function (p) { return p.kind === 'цех'; }).concat(list.filter(function (p) { return p.kind !== 'цех'; }));
   }

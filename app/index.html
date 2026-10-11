@@ -43,10 +43,10 @@ header.top {
 .top h1 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
 .top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
 nav.tabs {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-nav.tabs button { border: 0; background: none; color: var(--muted); font: 600 13px var(--body); padding: 12px 4px 14px; }
+nav.tabs button { border: 0; background: none; color: var(--muted); font: 600 12px var(--body); padding: 12px 2px 14px; }
 nav.tabs button[aria-current="page"] { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
 section { display: grid; gap: 14px; padding-top: 14px; }
 h2 { font: 700 15px/1.3 var(--display); margin: 6px 0 0; }
@@ -91,6 +91,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
 .person .line2 .seg button { padding: 7px 8px; font-size: 12px; }
 .person .line2 .spacer { flex: 1; }
+.chip[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.badge.warnb { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.issue { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
+.issue:first-of-type { border-top: 0; padding-top: 0; }
+.issue img, .shot img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); justify-self: start; }
 .chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
 .phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .phone a { color: var(--accent); text-decoration: none; }
@@ -108,6 +114,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .preview .red { color: #f00; font-weight: 700; }
 .preview mark { background: #ff0; color: #000; }
 .preview .date { text-align: center; font: 13px Calibri, Arial, sans-serif; padding: 4px; }
+.total { font-size: 17px; font-variant-numeric: tabular-nums; }
 .fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
 details > summary { cursor: pointer; font-weight: 600; }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -127,8 +134,10 @@ details > summary { cursor: pointer; font-weight: 600; }
   <button data-tab="gaz">Газели</button>
   <button data-tab="people">Люди</button>
   <button data-tab="files">Файлы</button>
+  <button data-tab="issues">Что не так</button>
 </nav>
 <input type="file" id="fileOpen" accept=".json,application/json" hidden>
+<input type="file" id="shotOpen" accept="image/*" hidden>
 
 <script src="vendor/docx.js"></script>
 <script src="vendor/exceljs.min.js"></script>
@@ -162,7 +171,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); updateTop(); }
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); }
 
   // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
   const BOOK_KEY = 'zubilikha_phones_v1';
@@ -178,6 +187,58 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
   function fillPhone(p) {
     if (!p.phone) { const k = bookKey(p); if (book[k]) p.phone = book[k]; }
+  }
+
+  // Метка «часто не выходит» тоже запоминается по «Фамилия И».
+  const MARKS_KEY = 'zubilikha_marks_v1';
+  let marks = {};
+  try { marks = JSON.parse(localStorage.getItem(MARKS_KEY) || '{}') || {}; } catch (e) { marks = {}; }
+  function isFlaky(p) { return !!marks[bookKey(p)]; }
+  function setFlaky(p, v) {
+    const k = bookKey(p);
+    if (!k) return;
+    if (v) marks[k] = true; else delete marks[k];
+    safeSet(MARKS_KEY, JSON.stringify(marks));
+  }
+
+  // Настройки газелей по датам, чтобы взять «как в прошлый раз».
+  const SET_KEY = 'zubilikha_settings_v1';
+  function loadSnaps() { try { return JSON.parse(localStorage.getItem(SET_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function snapshot() {
+    if (day.example || !day.date) return;
+    const snaps = loadSnaps();
+    snaps[day.date] = {
+      brigadier: day.brigadier, place: day.place, defaults: day.defaults, rate: day.rate,
+      gazelles: day.gazelles.map(function (g) { return Object.assign({}, g, { contact: '' }); }),
+    };
+    Object.keys(snaps).sort().slice(0, -7).forEach(function (k) { delete snaps[k]; });
+    safeSet(SET_KEY, JSON.stringify(snaps));
+  }
+  function prevSnap() {
+    const snaps = loadSnaps();
+    const dates = Object.keys(snaps).filter(function (k) { return k < day.date; }).sort();
+    const k = dates[dates.length - 1];
+    return k ? { date: k, s: snaps[k] } : null;
+  }
+  function applySnap(snap) {
+    const s = snap.s;
+    day.gazelles = s.gazelles.map(function (g) { return Object.assign(C.newGazelle(), g, { id: C.uid(), contact: '' }); });
+    day.defaults = Object.assign({}, day.defaults, s.defaults || {});
+    if (!String(day.brigadier || '').trim()) day.brigadier = s.brigadier || '';
+    if (s.place) day.place = s.place;
+    if (s.rate) day.rate = s.rate;
+    day.people.forEach(function (p) { if (!gById(p.gazId)) p.gazId = ''; });
+  }
+
+  // «Что не так»: заметки со скриншотами, копятся и выгружаются одним файлом.
+  const ISSUES_KEY = 'zubilikha_issues_v1';
+  let issues = [];
+  try { issues = JSON.parse(localStorage.getItem(ISSUES_KEY) || '[]') || []; } catch (e) { issues = []; }
+  let issueDraft = { text: '', img: '' };
+  let issueMsg = '';
+  let lastTab = 'people';
+  function saveIssues() {
+    try { localStorage.setItem(ISSUES_KEY, JSON.stringify(issues)); return true; } catch (e) { return false; }
   }
 
   function exampleDay() {
@@ -198,6 +259,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       const st = i < 9 ? stops[i % 4] : stops[4 + (i % 4)];
       d.people.push({ id: C.uid(), surname: n.split(' ')[0], initial: n.split(' ')[1], stop: st, kind: i >= 9 && i < 12 ? 'цех' : 'поле', phone: i === 1 ? '+7 900 000-00-00' : '', gazId: g.id, status: i === 5 || i === 12 ? 'noshow' : 'ok', flags: [] });
     });
+    d.people.filter(function (p) { return p.gazId === d.gazelles[2].id; })[0].driver = true;
     d.gazelles[0].contact = C.accusative('Данилов Д');
     d.zp = 'поле: ' + C.accusative('Белова Б');
     return d;
@@ -243,6 +305,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   document.getElementById('tabs').addEventListener('click', function (e) {
     const b = e.target.closest('button[data-tab]');
     if (!b) return;
+    if (tab !== 'issues') lastTab = tab;
     tab = b.dataset.tab; safeSet(TAB_KEY, tab); pendingConfirm = null; render(); window.scrollTo(0, 0);
   });
 
@@ -250,7 +313,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     document.querySelectorAll('#tabs button').forEach(function (b) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
-    const html = { day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles }[tab]();
+    const html = ({ day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles, issues: renderIssues }[tab] || renderPeople)();
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
     updateTop();
   }
@@ -271,7 +334,8 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<div class="grid2">' +
       '<label>Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '"></label>' +
       field('Бригадир', 'brigadier', day.brigadier, 'autocomplete="off"') +
-      '</div>' + field('Место (для имени файла)', 'place', day.place) +
+      '</div>' + '<div class="grid2">' + field('Место (для имени файла)', 'place', day.place) +
+      field('Нам за человека, ₽', 'rate', day.rate, 'inputmode="numeric"') + '</div>' +
       '</div>' +
       '<div class="card"><h2>Для всех газелей</h2><div class="muted">В карточке газели можно поменять для неё отдельно.</div>' +
       '<div class="grid3">' +
@@ -319,6 +383,16 @@ details > summary { cursor: pointer; font-weight: 600; }
   function renderGaz() {
     const d = day.defaults;
     let h = '<section>';
+    const ps = prevSnap();
+    if (ps) {
+      const dp = C.dateParts(ps.date);
+      h += '<div class="card"><div class="row"><div class="grow muted">Газели, оплата и время с ' + C.pad2(dp.d) + '.' + C.pad2(dp.m) + ': ' +
+        ps.s.gazelles.length + ' шт.</div>' +
+        (pendingConfirm === 'useSnap'
+          ? '<button class="btn primary small" data-act="useSnap" data-yes="1">Заменить текущие</button><button class="btn small" data-act="cancelConfirm">Отмена</button>'
+          : '<button class="btn small" data-act="useSnap">Как в прошлый раз</button>') +
+        '</div></div>';
+    }
     day.gazelles.forEach(function (g, i) {
       const n = C.peopleOf(day, g).length;
       const over = n > (+g.capacity || 0);
@@ -418,6 +492,15 @@ details > summary { cursor: pointer; font-weight: 600; }
 
   function dateShort() { const dp = C.dateParts(day.date); return dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : ''; }
 
+  function personMeta(p) {
+    const g = gById(p.gazId);
+    const bits = [];
+    if (p.phone && !openRows.has(p.id)) bits.push('☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>');
+    if (p.driver && g && g.vehicle === 'машина') bits.push('<span class="badge">водитель</span>');
+    if (isFlaky(p)) bits.push('<span class="badge warnb">часто не выходит</span>');
+    return bits.length ? '<div class="phone">' + bits.join(' ') + '</div>' : '';
+  }
+
   function personRow(p, n) {
     const flags = (p.flags || []).length
       ? '<div class="flag">⚠ ' + esc(p.flags.join('; ')) + (p.raw ? ' <code>«' + esc(p.raw) + '»</code>' : '') +
@@ -430,7 +513,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
       '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
       day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') + '</select></div>' +
-      (p.phone && !openRows.has(p.id) ? '<div class="phone">☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a></div>' : '') +
+      personMeta(p) +
       '<div class="line2">' +
       '<div class="seg" role="group" aria-label="Статус">' +
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
@@ -444,10 +527,100 @@ details > summary { cursor: pointer; font-weight: 600; }
         ? '<div class="more"><input type="tel" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">' +
           '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
           '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
-          '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>'
+          '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>' +
+          '<div class="more">' +
+          (gById(p.gazId) && gById(p.gazId).vehicle === 'машина'
+            ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
+          '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button></div>'
         : '') +
       flags + '</div>';
   }
+
+  // ---------- Что не так ----------
+  const TAB_NAMES = { day: 'День', gaz: 'Газели', people: 'Люди', files: 'Файлы' };
+  function fmtAt(iso) {
+    const d = new Date(iso);
+    return C.pad2(d.getDate()) + '.' + C.pad2(d.getMonth() + 1) + ' ' + C.pad2(d.getHours()) + ':' + C.pad2(d.getMinutes());
+  }
+  function renderIssues() {
+    let h = '<section><div class="card"><h2>Что не так</h2>' +
+      '<div class="muted">Записывайте сюда всё, что неудобно или сломалось, можно со скриншотом. Записи копятся. Когда наберётся, скачайте их одним файлом и пришлите мне, я починю всё разом.</div>' +
+      '<textarea id="issueText" placeholder="Например: на вкладке Люди уехала кнопка Отказ">' + esc(issueDraft.text) + '</textarea>' +
+      (issueDraft.img ? '<div class="shot"><img src="' + issueDraft.img + '" alt="Скриншот"></div>' : '') +
+      '<div class="row">' +
+      (issueDraft.img
+        ? '<button class="btn small" data-act="shotDrop">Убрать скриншот</button>'
+        : '<button class="btn small" data-act="shotPick">Приложить скриншот</button>') +
+      '<span class="grow"></span><button class="btn primary" data-act="issueAdd">Записать</button></div>' +
+      (issueMsg ? '<div class="muted" role="status">' + esc(issueMsg) + '</div>' : '') +
+      '</div>';
+    if (issues.length) {
+      h += '<div class="card"><div class="ghead"><h2>Записи</h2><span class="count">' + issues.length + '</span></div>' +
+        issues.slice().reverse().map(function (x) {
+          return '<div class="issue"><div class="muted">' + esc(fmtAt(x.at)) + ' · ' + esc(TAB_NAMES[x.ctx && x.ctx.tab] || '') + '</div>' +
+            (x.text ? '<div>' + esc(x.text).replace(/\n/g, '<br>') + '</div>' : '') +
+            (x.img ? '<img src="' + x.img + '" alt="Скриншот">' : '') +
+            '<div class="row"><button class="btn small danger" data-act="issueDel" data-id="' + x.id + '">Удалить</button></div></div>';
+        }).join('') +
+        '<div class="row"><button class="btn primary" data-act="issuesExport">Скачать все записи</button></div>' +
+        (pendingConfirm === 'issuesClear'
+          ? '<div class="confirm"><button class="btn danger" data-act="issuesClear" data-yes="1">Удалить все записи</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
+          : '<div class="row"><button class="btn small danger" data-act="issuesClear">Очистить список</button></div>') +
+        '</div>';
+    }
+    return h + '</section>';
+  }
+  function issuesReport() {
+    const rows = issues.map(function (x, i) {
+      const c = x.ctx || {};
+      return '<section><h2>' + (i + 1) + '. ' + esc(fmtAt(x.at)) + ' · ' + esc(TAB_NAMES[c.tab] || '') + '</h2>' +
+        (x.text ? '<p>' + esc(x.text).replace(/\n/g, '<br>') + '</p>' : '') +
+        (x.img ? '<img src="' + x.img + '" alt="">' : '') +
+        '<p class="ctx">Экран ' + esc(c.w) + '×' + esc(c.h) + ' · день ' + esc(c.date) + ' · ' + esc(c.ua) + '</p></section>';
+    }).join('');
+    return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Что не так</title><style>body{font:15px/1.45 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:16px}' +
+      'section{border-top:1px solid #ccc;padding:12px 0}h2{font-size:15px;margin:0 0 6px}img{max-width:100%;border:1px solid #ccc;border-radius:6px}' +
+      '.ctx{color:#777;font-size:12px}</style></head><body><h1>Что не так: ' + issues.length + '</h1>' + rows + '</body></html>';
+  }
+  // Уменьшает скриншот, чтобы записи помещались в память браузера.
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        const k = Math.min(1, 1100 / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url);
+        resolve(cv.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('не картинка')); };
+      img.src = url;
+    });
+  }
+  document.getElementById('shotOpen').addEventListener('change', async function (e) {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const ta = document.getElementById('issueText');
+    if (ta) issueDraft.text = ta.value;
+    try { issueDraft.img = await shrinkImage(f); issueMsg = ''; } catch (err) { issueMsg = 'Не получилось открыть картинку.'; }
+    render();
+  });
+  // Скриншот можно вставить прямо в поле текста.
+  $main.addEventListener('paste', async function (e) {
+    if (tab !== 'issues' || !e.clipboardData) return;
+    const item = Array.prototype.find.call(e.clipboardData.items, function (it) { return it.type && it.type.indexOf('image/') === 0; });
+    if (!item) return;
+    e.preventDefault();
+    const ta = document.getElementById('issueText');
+    if (ta) issueDraft.text = ta.value;
+    try { issueDraft.img = await shrinkImage(item.getAsFile()); } catch (err) { issueMsg = 'Не получилось вставить картинку.'; }
+    render();
+  });
+  $main.addEventListener('input', function (e) { if (e.target.id === 'issueText') issueDraft.text = e.target.value; });
 
   // ---------- Файлы ----------
   function renderFiles() {
@@ -462,6 +635,8 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
       '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
       '<div class="row"><button class="btn primary" data-act="dlExcel">Скачать Excel</button></div></div>' +
+      '<div class="card"><h2>Итог дня</h2><div class="total">Вышли ' + went + ' чел. × ' + (+day.rate || 0) + ' ₽ = <b>' +
+      (went * (+day.rate || 0)).toLocaleString('ru-RU') + ' ₽</b></div><div class="muted">Только для вас, в Word и Excel не попадает.</div></div>' +
       '<div id="dlMsg" class="muted" role="status"></div>' +
       '</section>';
   }
@@ -604,8 +779,39 @@ details > summary { cursor: pointer; font-weight: 600; }
     const yes = b.dataset.yes === '1';
     switch (act) {
       case 'startOwn': {
-        const keep = C.newDay();
-        keep.brigadier = ''; day = keep; break;
+        day = C.newDay();
+        const ps = prevSnap();
+        if (ps) applySnap(ps);
+        break;
+      }
+      case 'useSnap': {
+        if (!yes) { pendingConfirm = 'useSnap'; break; }
+        pendingConfirm = null;
+        const ps = prevSnap();
+        if (ps) applySnap(ps);
+        break;
+      }
+      case 'pDriver': { const p = person(id); p.driver = !p.driver; break; }
+      case 'pFlaky': { const p = person(id); setFlaky(p, !isFlaky(p)); render(); return; }
+      case 'shotPick': document.getElementById('shotOpen').click(); return;
+      case 'shotDrop': issueDraft.img = ''; render(); return;
+      case 'issueAdd': {
+        const ta = document.getElementById('issueText');
+        issueDraft.text = ta ? ta.value : issueDraft.text;
+        if (!issueDraft.text.trim() && !issueDraft.img) { issueMsg = 'Напишите, что не так, или приложите скриншот.'; render(); return; }
+        issues.push({ id: C.uid(), at: new Date().toISOString(), text: issueDraft.text.trim(), img: issueDraft.img,
+          ctx: { tab: lastTab, w: window.innerWidth, h: window.innerHeight, date: day.date, ua: navigator.userAgent } });
+        if (saveIssues()) { issueDraft = { text: '', img: '' }; issueMsg = 'Записал. Всего записей: ' + issues.length + '.'; }
+        else { issues.pop(); issueMsg = 'Не хватило места в памяти браузера. Скачайте записи файлом и очистите список.'; }
+        render(); return;
+      }
+      case 'issueDel': issues = issues.filter(function (x) { return x.id !== id; }); saveIssues(); render(); return;
+      case 'issuesClear':
+        if (!yes) { pendingConfirm = 'issuesClear'; render(); return; }
+        pendingConfirm = null; issues = []; saveIssues(); issueMsg = ''; render(); return;
+      case 'issuesExport': {
+        await offer('chto_ne_tak_' + new Date().toISOString().slice(0, 10) + '.html', new Blob([issuesReport()], { type: 'text/html' }));
+        return;
       }
       case 'cancelConfirm': pendingConfirm = null; break;
       case 'newDay':
@@ -619,7 +825,7 @@ details > summary { cursor: pointer; font-weight: 600; }
         break;
       case 'exportJson': {
         const name = 'den_' + dateShort().replace('.', '_') + '_' + C.translit(day.brigadier || 'brigada') + '.json';
-        const data = Object.assign({}, day, { phonebook: book });
+        const data = Object.assign({}, day, { phonebook: book, marks: marks });
         await offer(name, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
         return;
       }
@@ -705,7 +911,10 @@ details > summary { cursor: pointer; font-weight: 600; }
         day = migrate(JSON.parse(rd.result));
         Object.assign(book, day.phonebook || {});
         saveBook();
+        Object.assign(marks, day.marks || {});
+        safeSet(MARKS_KEY, JSON.stringify(marks));
         delete day.phonebook;
+        delete day.marks;
         day.example = false; save(); tab = 'people'; render();
       }
       catch (err) { parseReport = '<div class="note">Это не файл дня: ' + esc(err.message) + '</div>'; render(); }
