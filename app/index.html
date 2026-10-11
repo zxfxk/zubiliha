@@ -1,0 +1,719 @@
+<title>Газели Зубилиха</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Раскладка: одна колонка под палец, липкая шапка со счётчиками, нижняя панель вкладок. */
+:root {
+  --bg: #f3f4ee;
+  --surface: #ffffff;
+  --line: #d9dccf;
+  --fg: #1f2419;
+  --muted: #646b58;
+  --accent: #3f6b2a;        /* ботва */
+  --accent-fg: #ffffff;
+  --marker: #fff200;        /* жёлтый маркер, как в Word */
+  --marker-fg: #1f2419;
+  --warn: #9a5b00;
+  --warn-bg: #fff4dd;
+  --danger: #b3261e;
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15180f; --surface: #1e2217; --line: #343a2a; --fg: #e8ebdf; --muted: #a2aa92;
+    --accent: #8fc46a; --accent-fg: #11160b; --marker: #e6d800; --marker-fg: #15180f;
+    --warn: #f0b85a; --warn-bg: #3a2d12; --danger: #ff8a80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15180f; --surface: #1e2217; --line: #343a2a; --fg: #e8ebdf; --muted: #a2aa92;
+  --accent: #8fc46a; --accent-fg: #11160b; --marker: #e6d800; --marker-fg: #15180f;
+  --warn: #f0b85a; --warn-bg: #3a2d12; --danger: #ff8a80; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.4 var(--body); margin: 0; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 0 96px; }
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--line); padding-block: 10px; margin-inline: -16px; padding-inline: 16px;
+}
+.top h1 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+nav.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+nav.tabs button { border: 0; background: none; color: var(--muted); font: 600 13px var(--body); padding: 12px 4px 14px; }
+nav.tabs button[aria-current="page"] { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+section { display: grid; gap: 14px; padding-top: 14px; }
+h2 { font: 700 15px/1.3 var(--display); margin: 6px 0 0; }
+h3 { font: 600 15px/1.3 var(--body); margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 380px) { .grid3 { grid-template-columns: 1fr 1fr; } }
+label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); letter-spacing: .02em; min-width: 0; }
+input, select, textarea {
+  font: 16px/1.3 var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
+}
+textarea { min-height: 120px; resize: vertical; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn {
+  font: 600 15px var(--body); border-radius: 8px; padding: 11px 14px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); cursor: pointer;
+}
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.danger { color: var(--danger); }
+.btn.small { padding: 7px 10px; font-size: 13px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row > .grow { flex: 1 1 160px; min-width: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+.note { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--muted); font: 600 13px var(--body); padding: 8px 10px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.seg button.st-noshow[aria-pressed="true"] { background: var(--marker); color: var(--marker-fg); }
+.seg button.st-refused[aria-pressed="true"] { background: var(--muted); color: var(--surface); }
+.ghead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.count { font-variant-numeric: tabular-nums; font-weight: 600; }
+.count.over { color: var(--danger); }
+.person { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.person:first-of-type { border-top: 0; padding-top: 0; }
+.person .line1 { display: grid; grid-template-columns: 24px 1fr 1fr 58px; gap: 6px; align-items: center; }
+.person .line1 select { padding: 9px 4px; }
+.person .num { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: 14px; }
+.person.noshow .pname { background: var(--marker); color: var(--marker-fg); }
+.person.refused .pname, .person.refused .pstop { text-decoration: line-through; color: var(--muted); }
+.person .line2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-left: 30px; }
+.person .line2 .seg button { padding: 7px 8px; font-size: 12px; }
+.person .line2 .spacer { flex: 1; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
+.phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.phone a { color: var(--accent); text-decoration: none; }
+.more { padding-left: 30px; display: flex; gap: 6px; align-items: center; }
+.more input { flex: 1 1 auto; padding: 7px 8px; font-size: 15px; }
+.sublabel { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); padding-top: 4px; }
+.iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; width: 34px; height: 32px; font-size: 15px; }
+.flag { padding-left: 30px; font-size: 13px; color: var(--warn); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.flag code { font-family: inherit; color: var(--muted); }
+.stops { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.preview { overflow-x: auto; background: #fff; color: #000; border-radius: 8px; border: 1px solid var(--line); }
+.preview table { border-collapse: collapse; font: 11px/1.25 Arial, sans-serif; min-width: 640px; width: 100%; }
+.preview td { border: 1px solid #000; padding: 1px 4px; vertical-align: top; }
+.preview .h { font-weight: 700; }
+.preview .red { color: #f00; font-weight: 700; }
+.preview mark { background: #ff0; color: #000; }
+.preview .date { text-align: center; font: 13px Calibri, Arial, sans-serif; padding: 4px; }
+.fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
+details > summary { cursor: pointer; font-weight: 600; }
+.confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner { border: 1px dashed var(--accent); border-radius: var(--r); padding: 12px; display: grid; gap: 8px; }
+@media (prefers-reduced-motion: no-preference) { .btn, .seg button { transition: background .15s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">Газели</h1>
+    <div class="sub" id="subtitle"></div>
+  </header>
+  <main id="main"></main>
+</div>
+<nav class="tabs" id="tabs">
+  <button data-tab="day">День</button>
+  <button data-tab="gaz">Газели</button>
+  <button data-tab="people">Люди</button>
+  <button data-tab="files">Файлы</button>
+</nav>
+<input type="file" id="fileOpen" accept=".json,application/json" hidden>
+
+<script src="vendor/docx.js"></script>
+<script src="vendor/exceljs.min.js"></script>
+<script src="core.js"></script>
+<script src="gen.js"></script>
+<script>
+(function () {
+  'use strict';
+  const C = window.Core;
+  const KEY = 'zubilikha_day_v1';
+  const TAB_KEY = 'zubilikha_tab';
+  const $main = document.getElementById('main');
+
+  // ---------- состояние ----------
+  let day = load() || exampleDay();
+  let tab = safeGet(TAB_KEY) || 'people';
+  const openRows = new Set();
+  let parseReport = null;
+  let pendingConfirm = null;
+
+  function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* хранилище недоступно */ } }
+  function load() {
+    try { const s = localStorage.getItem(KEY); return s ? migrate(JSON.parse(s)) : null; } catch (e) { return null; }
+  }
+  function migrate(d) {
+    const base = C.newDay();
+    d = Object.assign({}, base, d);
+    d.defaults = Object.assign({}, base.defaults, d.defaults || {});
+    d.gazelles = (d.gazelles || []).map(function (g) { return Object.assign(C.newGazelle(), g); });
+    d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
+    return d;
+  }
+  function save() { safeSet(KEY, JSON.stringify(day)); updateTop(); }
+
+  // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
+  const BOOK_KEY = 'zubilikha_phones_v1';
+  let book = {};
+  try { book = JSON.parse(localStorage.getItem(BOOK_KEY) || '{}') || {}; } catch (e) { book = {}; }
+  function bookKey(p) { return C.norm(C.personLabel(p)); }
+  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); }
+  function rememberPhone(p) {
+    const k = bookKey(p);
+    if (!k) return;
+    if (p.phone) book[k] = p.phone; else delete book[k];
+    saveBook();
+  }
+  function fillPhone(p) {
+    if (!p.phone) { const k = bookKey(p); if (book[k]) p.phone = book[k]; }
+  }
+
+  function exampleDay() {
+    const d = C.newDay();
+    d.example = true;
+    d.brigadier = 'Петров';
+    const spec = [['457', 'Д', 19], ['601', 'М', 18], ['685', '', 5]];
+    d.gazelles.forEach(function (g, i) { g.number = spec[i][0]; g.letter = spec[i][1]; g.capacity = spec[i][2]; });
+    d.gazelles[1].kind = 'Цех/поле';
+    d.gazelles[1].payShop = '3000';
+    d.gazelles[2].vehicle = 'машина';
+    d.gazelles[2].carName = 'тойота королла';
+    const names = ['Абрамов А', 'Белова Б', 'Воронин В', 'Гаврилова Г', 'Данилов Д', 'Ефимова Е', 'Жуков Ж', 'Зайцева З', 'Ильин И', 'Ковалева К',
+      'Лаптев Л', 'Миронова М', 'Носков Н', 'Орлова О', 'Панов П', 'Рябова Р', 'Соколов С', 'Титова Т', 'Уткин У', 'Фомина Ф', 'Хохлов Х', 'Цветкова Ц'];
+    const stops = ['Леспромхоз', 'Пурех 5ка', 'Рынок', '3шк', 'Художка', 'Стекляшка', 'Фрунзе/Пионерская', 'Шалдеж'];
+    names.forEach(function (n, i) {
+      const g = d.gazelles[i < 9 ? 0 : i < 17 ? 1 : 2];
+      const st = i < 9 ? stops[i % 4] : stops[4 + (i % 4)];
+      d.people.push({ id: C.uid(), surname: n.split(' ')[0], initial: n.split(' ')[1], stop: st, kind: i >= 9 && i < 12 ? 'цех' : 'поле', phone: i === 1 ? '+7 900 000-00-00' : '', gazId: g.id, status: i === 5 || i === 12 ? 'noshow' : 'ok', flags: [] });
+    });
+    d.gazelles[0].contact = C.accusative('Данилов Д');
+    d.zp = 'поле: ' + C.accusative('Белова Б');
+    return d;
+  }
+
+  // ---------- помощники ----------
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function gById(id) { return day.gazelles.find(function (g) { return g.id === id; }); }
+  function gTitle(g) {
+    const i = day.gazelles.indexOf(g);
+    if (g.vehicle === 'машина') return (i + 1) + '. ' + g.kind + ', ' + ((g.carName || 'машина') + ' ' + (g.number || '')).trim();
+    return (i + 1) + '. ' + g.kind + (g.number ? ' №' + g.number : '') + (g.letter ? ' ' + g.letter : '');
+  }
+  function gShort(g, gi) {
+    return (gi + 1) + (g.vehicle === 'машина' ? 'М' : g.kind === 'Цех' ? 'Ц' : g.kind === 'Цех/поле' ? 'ЦП' : 'П');
+  }
+  function splitName(text) {
+    const parts = String(text || '').trim().replace(/\./g, ' ').split(/\s+/).filter(Boolean);
+    if (!parts.length) return { surname: '', initial: '' };
+    const last = parts[parts.length - 1];
+    if (parts.length > 1 && last.length === 1) return { surname: parts.slice(0, -1).join(' '), initial: last.toUpperCase() };
+    return { surname: parts.join(' '), initial: '' };
+  }
+  function dateTitle() {
+    const dp = C.dateParts(day.date);
+    return dp ? dp.d + ' ' + C.MONTHS_GEN[dp.m - 1] : 'без даты';
+  }
+  function stopsList() { return C.parseStops(day.stopsText); }
+
+  function updateTop() {
+    document.getElementById('title').textContent = (day.place || 'Газели') + ' · ' + dateTitle();
+    const active = day.people.filter(function (p) { return p.status !== 'refused'; });
+    const placed = active.filter(function (p) { return p.gazId; }).length;
+    const cap = day.gazelles.reduce(function (s, g) { return s + (+g.capacity || 0); }, 0);
+    const noshow = day.people.filter(function (p) { return p.status === 'noshow'; }).length;
+    document.getElementById('subtitle').textContent =
+      'Бригадир: ' + (day.brigadier || '—') + ' · в газелях ' + placed + ' из ' + cap + ' мест' +
+      (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
+      (noshow ? ' · не вышли ' + noshow : '');
+  }
+
+  // ---------- вкладки ----------
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    const b = e.target.closest('button[data-tab]');
+    if (!b) return;
+    tab = b.dataset.tab; safeSet(TAB_KEY, tab); pendingConfirm = null; render(); window.scrollTo(0, 0);
+  });
+
+  function render() {
+    document.querySelectorAll('#tabs button').forEach(function (b) {
+      if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    const html = { day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles }[tab]();
+    $main.innerHTML = (day.example ? exampleBanner() : '') + html;
+    updateTop();
+  }
+
+  function exampleBanner() {
+    return '<section><div class="banner"><div>Сейчас открыт <b>пример с выдуманными фамилиями</b>, чтобы было видно, как всё работает.</div>' +
+      '<div class="row"><button class="btn primary" data-act="startOwn">Начать свой день</button></div></div></section>';
+  }
+
+  // ---------- День ----------
+  function field(label, path, value, attrs) {
+    return '<label>' + esc(label) + '<input data-path="' + path + '" value="' + esc(value) + '" ' + (attrs || '') + '></label>';
+  }
+  function renderDay() {
+    const d = day.defaults;
+    return '<section>' +
+      '<div class="card"><h2>День</h2>' +
+      '<div class="grid2">' +
+      '<label>Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '"></label>' +
+      field('Бригадир', 'brigadier', day.brigadier, 'autocomplete="off"') +
+      '</div>' + field('Место (для имени файла)', 'place', day.place) +
+      '</div>' +
+      '<div class="card"><h2>Для всех газелей</h2><div class="muted">В карточке газели можно поменять для неё отдельно.</div>' +
+      '<div class="grid3">' +
+      field('Выезд в', 'defaults.departure', d.departure, 'inputmode="decimal"') +
+      field('Оплата', 'defaults.pay', d.pay, 'inputmode="numeric"') +
+      field('Оплата цех', 'defaults.payShop', d.payShop, 'inputmode="numeric" placeholder="как поле"') +
+      field('Начало', 'defaults.start', d.start) +
+      field('Конец', 'defaults.end', d.end) +
+      '</div>' +
+      '<div class="grid2">' + field('Вид работы', 'defaults.work', d.work) + field('Вид работы цех', 'defaults.workShop', d.workShop, 'placeholder="как поле"') + '</div>' +
+      field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
+      '</div>' +
+      '<div class="card"><h2>Низ таблицы</h2>' +
+      '<div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div>' +
+      field('ЗП прошу получить/выдать –', 'zp', day.zp) +
+      '<label>Добавить к ЗП человека<select data-act="zpAdd"><option value="">выбрать…</option>' + peopleOptions(null) + '</select></label>' +
+      field('Приписка (курсивом)', 'footer', day.footer) +
+      '</div>' +
+      '<div class="card"><h2>Файл дня</h2>' +
+      '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
+      '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
+      confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
+      '</div>' +
+      '<div class="card"><details><summary>Справочник остановок</summary>' +
+      '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны. Порядок строк — порядок в сводке.</p>' +
+      '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
+      '<label class="row" style="display:flex"><input type="checkbox" data-path="latinNames" style="width:auto" ' + (day.latinNames ? 'checked' : '') + '> Имена файлов латиницей</label>' +
+      '</details></div>' +
+      '</section>';
+  }
+
+  function confirmBlock(act, label, text, yes) {
+    if (pendingConfirm === act) {
+      return '<div class="note">' + esc(text) + '</div><div class="confirm"><button class="btn danger" data-act="' + act + '" data-yes="1">' + esc(yes) + '</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>';
+    }
+    return '<div class="row"><button class="btn danger" data-act="' + act + '">' + esc(label) + '</button></div>';
+  }
+
+  function peopleOptions(g) {
+    return day.people.filter(function (p) { return p.status !== 'refused' && (!g || p.gazId === g.id); })
+      .map(function (p) { return '<option value="' + p.id + '">' + esc(C.personLabel(p)) + '</option>'; }).join('');
+  }
+
+  // ---------- Газели ----------
+  function renderGaz() {
+    const d = day.defaults;
+    let h = '<section>';
+    day.gazelles.forEach(function (g, i) {
+      const n = C.peopleOf(day, g).length;
+      const over = n > (+g.capacity || 0);
+      const pre = 'gazelles.' + i + '.';
+      h += '<div class="card">' +
+        '<div class="ghead"><h2>' + esc(gTitle(g)) + '</h2><span class="count' + (over ? ' over' : '') + '">' + n + ' / ' + (+g.capacity || 0) + '</span></div>' +
+        '<div class="row"><div class="seg" role="group" aria-label="Куда едет">' +
+        ['Поле', 'Цех', 'Цех/поле'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
+        '</div><div class="seg" role="group" aria-label="Транспорт">' +
+        ['газель', 'машина'].map(function (k) { return '<button data-act="gVehicle" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + ((g.vehicle || 'газель') === k) + '">' + (k === 'газель' ? 'Газель' : 'Машина') + '</button>'; }).join('') +
+        '</div><span class="grow"></span>' +
+        '<button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше">↑</button>' +
+        '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже">↓</button></div>' +
+        '<div class="grid3">' +
+        (g.vehicle === 'машина'
+          ? field('Марка', pre + 'carName', g.carName, 'placeholder="тойота королла"') + field('Номер', pre + 'number', g.number, 'inputmode="numeric"')
+          : field('Номер', pre + 'number', g.number, 'inputmode="numeric"') + field('Буква', pre + 'letter', g.letter)) +
+        field('Мест', pre + 'capacity', g.capacity, 'type="number" inputmode="numeric" min="1"') +
+        '</div>' +
+        '<details><summary>Время, оплата, работа' + (['departure', 'pay', 'payShop', 'start', 'end', 'work', 'workShop', 'reminder'].some(function (k) { return String(g[k] || '').trim(); }) ? ' (изменено)' : '') + '</summary>' +
+        '<div class="grid3" style="margin-top:10px">' +
+        field('Выезд в', pre + 'departure', g.departure, 'placeholder="' + esc(d.departure) + '"') +
+        field(g.kind === 'Поле' ? 'Оплата' : 'Оплата поле', pre + 'pay', g.pay, 'placeholder="' + esc(d.pay) + '"') +
+        (g.kind !== 'Поле' ? field('Оплата цех', pre + 'payShop', g.payShop, 'placeholder="' + esc(d.payShop || d.pay) + '"') : '') +
+        field('Начало', pre + 'start', g.start, 'placeholder="' + esc(d.start) + '"') +
+        field('Конец', pre + 'end', g.end, 'placeholder="' + esc(d.end) + '"') +
+        '</div>' +
+        field(g.kind === 'Поле' ? 'Вид работы' : 'Вид работы поле', pre + 'work', g.work, 'placeholder="' + esc(d.work) + '"') +
+        (g.kind !== 'Поле' ? field('Вид работы цех', pre + 'workShop', g.workShop, 'placeholder="' + esc(d.workShop || d.work) + '"') : '') +
+        field('Напоминание', pre + 'reminder', g.reminder, 'placeholder="' + esc(d.reminder) + '"') +
+        '<div class="muted">Пустое поле = как для всех газелей.</div>' +
+        '</details>' +
+        field('По остановкам прошу отписаться –', pre + 'contact', g.contact) +
+        '<label>Выбрать из этой газели<select data-act="gContact" data-i="' + i + '"><option value="">выбрать…</option>' + peopleOptions(g) + '</select></label>' +
+        (pendingConfirm === 'gDel' + i
+          ? '<div class="note">Люди из этой газели перейдут в «Без газели».</div><div class="confirm"><button class="btn danger" data-act="gDel" data-i="' + i + '" data-yes="1">Удалить газель</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
+          : '<div class="row"><button class="btn danger small" data-act="gDel" data-i="' + i + '">Удалить газель</button></div>') +
+        '</div>';
+    });
+    h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button><button class="btn" data-act="gAddCar">Добавить машину</button></div></section>';
+    return h;
+  }
+
+  // ---------- Люди ----------
+  function renderPeople() {
+    const stops = stopsList();
+    let h = '<section>';
+    h += '<div class="card"><h2>Вставить из ВК</h2>' +
+      '<div class="muted">Скопируйте сообщения из чата целиком. Возьму только строки с датой ' + esc(dateShort()) + ', остальное пропущу.</div>' +
+      '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле"></textarea>' +
+      '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button></div>' +
+      (parseReport ? parseReport : '') +
+      '</div>';
+
+    const groups = day.gazelles.map(function (g) { return { g: g, list: C.peopleOf(day, g) }; });
+    const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
+    const refused = day.people.filter(function (p) { return p.status === 'refused'; });
+
+    if (none.length || !day.people.length) {
+      h += '<div class="card"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
+      if (none.length) {
+        h += '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="">А–Я</button><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
+          day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') + '</select></div>';
+      } else {
+        h += '<div class="muted">Пока никого. Вставьте сообщения из ВК выше или добавьте человека вручную.</div>';
+      }
+      h += none.map(function (p, i) { return personRow(p, i + 1); }).join('');
+      h += '<div class="row"><button class="btn small" data-act="pAdd" data-g="">Добавить человека</button></div></div>';
+    }
+
+    groups.forEach(function (x) {
+      const cap = +x.g.capacity || 0;
+      const n = x.list.length;
+      const sum = C.stopSummary(day, x.g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join(' · ');
+      h += '<div class="card"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
+        (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
+        (sum ? '<div class="stops">' + sum + '</div>' : '') +
+        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button></div>' : '') +
+        x.list.map(function (p, i) {
+          let label = '';
+          if (x.g.kind === 'Цех/поле') {
+            const k = C.kindOf(x.g, p);
+            if (i === 0 || C.kindOf(x.g, x.list[i - 1]) !== k) label = '<div class="sublabel">' + (k === 'Цех' ? 'Цех' : 'Поле') + '</div>';
+          }
+          return label + personRow(p, i + 1);
+        }).join('') +
+        '<div class="row"><button class="btn small" data-act="pAdd" data-g="' + x.g.id + '">Добавить человека</button></div></div>';
+    });
+
+    if (refused.length) {
+      h += '<div class="card"><details><summary>Отказались (' + refused.length + ')</summary><div style="display:grid;gap:10px;margin-top:10px">' +
+        refused.map(function (p, i) { return personRow(p, i + 1); }).join('') + '</div></details></div>';
+    }
+    h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
+    return h + '</section>';
+  }
+
+  function dateShort() { const dp = C.dateParts(day.date); return dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : ''; }
+
+  function personRow(p, n) {
+    const flags = (p.flags || []).length
+      ? '<div class="flag">⚠ ' + esc(p.flags.join('; ')) + (p.raw ? ' <code>«' + esc(p.raw) + '»</code>' : '') +
+        ' <button class="btn small" data-act="pOk" data-id="' + p.id + '">Всё верно</button></div>'
+      : '';
+    const st = p.status || 'ok';
+    return '<div class="person ' + st + '" data-id="' + p.id + '">' +
+      '<div class="line1"><span class="num">' + n + '</span>' +
+      '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
+      '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
+      '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
+      day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') + '</select></div>' +
+      (p.phone && !openRows.has(p.id) ? '<div class="phone">☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a></div>' : '') +
+      '<div class="line2">' +
+      '<div class="seg" role="group" aria-label="Статус">' +
+      [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
+        return '<button class="st-' + s[0] + '" data-act="pStatus" data-id="' + p.id + '" data-v="' + s[0] + '" aria-pressed="' + (st === s[0]) + '">' + s[1] + '</button>';
+      }).join('') + '</div>' +
+      '<span class="spacer"></span>' +
+      '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' +
+      '<button class="iconbtn" data-act="pMore" data-id="' + p.id + '" aria-label="Ещё" aria-expanded="' + openRows.has(p.id) + '">⋯</button>' +
+      '</div>' +
+      (openRows.has(p.id)
+        ? '<div class="more"><input type="tel" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">' +
+          '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
+          '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
+          '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>'
+        : '') +
+      flags + '</div>';
+  }
+
+  // ---------- Файлы ----------
+  function renderFiles() {
+    const w = C.warnings(day);
+    const names = C.fileNames(day);
+    const went = C.wentPeople(day).length;
+    return '<section>' +
+      (w.length ? '<div class="note">' + w.map(esc).join('<br>') + '</div>' : '') +
+      '<div class="card"><h2>Word для чатов</h2><div class="fname">' + esc(names.word) + '</div>' +
+      '<div class="row"><button class="btn primary" data-act="dlWord">Скачать Word</button></div>' +
+      '<div class="preview">' + previewHtml() + '</div></div>' +
+      '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
+      '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
+      '<div class="row"><button class="btn primary" data-act="dlExcel">Скачать Excel</button></div></div>' +
+      '<div id="dlMsg" class="muted" role="status"></div>' +
+      '</section>';
+  }
+
+  function previewHtml() {
+    const stops = stopsList();
+    const gs = day.gazelles;
+    const lists = gs.map(function (g) { return C.peopleOf(day, g); });
+    const maxRows = Math.max.apply(null, [0].concat(gs.map(function (g, i) { return Math.max(+g.capacity || 0, lists[i].length); })));
+    let h = '<div class="date">' + esc(dateTitle()) + '</div><table><tr><td>№</td>';
+    gs.forEach(function (g, i) {
+      const hours = C.hh(C.gz(day, g, 'start')) + '-' + C.hh(C.gz(day, g, 'end')) + ' р.д.';
+      h += '<td><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '') + ' (' + (+g.capacity || 0) + 'м)</div>' +
+        '<div class="red">выезд в ' + esc(C.gz(day, g, 'departure')) + '.</div>' +
+        '<div class="h">Оплата ' + esc(window.Gen.payText(day, g)) + '. ' + hours + ' ' + esc(window.Gen.workText(day, g)) + '</div>' +
+        '<div class="red">' + esc(C.gz(day, g, 'reminder')) + '</div></td>';
+    });
+    h += '</tr>';
+    for (let r = 1; r <= maxRows; r++) {
+      h += '<tr><td>' + r + '</td>';
+      gs.forEach(function (g, i) {
+        const cap = +g.capacity || 0, list = lists[i];
+        let c = '';
+        if (r <= list.length) {
+          const p = list[r - 1];
+          const t = esc([C.personLabel(p), p.stop].filter(Boolean).join(' '));
+          c = p.status === 'noshow' ? '<mark>' + t + '</mark>' : t;
+        } else if (r <= cap) c = '<mark>СВОБОДНОЕ МЕСТО</mark>';
+        else if (r === Math.max(cap, list.length) + 1) c = '<i>' + esc(window.Gen.places(cap)) + '</i>';
+        h += '<td>' + c + '</td>';
+      });
+      h += '</tr>';
+    }
+    h += '<tr><td></td>' + gs.map(function (g) {
+      return '<td style="font-size:10px">По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br><b>Остановки:</b><br>' +
+        C.stopSummary(day, g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join('<br>') + '</td>';
+    }).join('') + '</tr>';
+    h += '<tr><td colspan="' + (gs.length + 1) + '" style="text-align:center"><div class="red">Замена поле: ' + esc(day.replaceField || '-') + '</div>' +
+      '<div class="red">Замена цех: ' + esc(day.replaceShop || '-') + '</div><div><span class="red">!!</span>ЗП поле/цех прошу получить/выдать – ' + esc(day.zp) + '</div>' +
+      '<div><i>' + esc(day.footer) + '</i></div></td></tr></table>';
+    return h;
+  }
+
+  // ---------- скачивание ----------
+  let dlCap = null;
+  if (window.claude && window.claude.use) {
+    dlCap = window.claude.use('downloads').catch(function () { return null; });
+  }
+  async function offer(filename, blob) {
+    const msg = document.getElementById('dlMsg');
+    const say = function (t) { if (msg) msg.textContent = t; };
+    const dl = dlCap ? await dlCap : null;
+    if (dl) {
+      try { await dl.save({ filename: filename, data: blob }); say('Готово: ' + filename); }
+      catch (e) {
+        if (e && e.code === 'declined') say('Скачивание отменено.');
+        else if (e && e.code === 'rate_limited') say('Уже открыт запрос на скачивание. Подтвердите его или подождите.');
+        else say('Не получилось скачать: ' + ((e && e.message) || 'ошибка') + '.');
+      }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    say('Готово: ' + filename);
+  }
+  async function downloadWord() {
+    const doc = window.Gen.buildWord(day, window.docx);
+    const blob = await window.docx.Packer.toBlob(doc);
+    await offer(C.fileNames(day).word, blob);
+  }
+  async function downloadExcel() {
+    const wb = window.Gen.buildExcel(day, window.ExcelJS);
+    const buf = await wb.xlsx.writeBuffer();
+    await offer(C.fileNames(day).excel, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  }
+
+  // ---------- действия ----------
+  function setPath(path, value) {
+    const keys = path.split('.');
+    let o = day;
+    for (let i = 0; i < keys.length - 1; i++) o = o[keys[i]];
+    o[keys[keys.length - 1]] = value;
+  }
+  function person(id) { return day.people.find(function (p) { return p.id === id; }); }
+  function moveWithin(p, dir) {
+    const same = day.people.filter(function (x) { return (x.gazId || '') === (p.gazId || '') && (x.status === 'refused') === (p.status === 'refused'); });
+    const k = same.indexOf(p);
+    const other = same[k + dir];
+    if (!other) return;
+    const a = day.people.indexOf(p), b = day.people.indexOf(other);
+    day.people[a] = other; day.people[b] = p;
+  }
+  function toEnd(p) { day.people.splice(day.people.indexOf(p), 1); day.people.push(p); }
+
+  $main.addEventListener('input', function (e) {
+    const t = e.target;
+    if (t.dataset.path) {
+      let v = t.type === 'checkbox' ? t.checked : t.value;
+      if (t.dataset.path.endsWith('.capacity')) v = Math.max(0, parseInt(v, 10) || 0);
+      setPath(t.dataset.path, v);
+      if (t.dataset.path === 'date' || t.dataset.path === 'place' || t.dataset.path === 'brigadier') updateTop();
+      save();
+    }
+  });
+  $main.addEventListener('change', function (e) {
+    const t = e.target;
+    if (t.dataset.pf) {
+      const p = person(t.dataset.id);
+      if (!p) return;
+      if (t.dataset.pf === 'name') { Object.assign(p, splitName(t.value)); fillPhone(p); }
+      else if (t.dataset.pf === 'phone') { p.phone = C.formatPhone(t.value); rememberPhone(p); }
+      else {
+        const s = t.value.trim() ? C.findStopByText(t.value, stopsList()) : null;
+        p.stop = s ? s.name : t.value.trim();
+      }
+      save(); render(); return;
+    }
+    const act = t.dataset.act;
+    if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); }
+    else if (act === 'moveAll' && t.value) {
+      day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
+    }
+    else if (act === 'gContact' && t.value) { day.gazelles[+t.dataset.i].contact = C.accusative(C.personLabel(person(t.value))); }
+    else if (act === 'zpAdd' && t.value) {
+      const n = C.accusative(C.personLabel(person(t.value)));
+      day.zp = String(day.zp || '').trim() ? day.zp.trim() + ' / ' + n : 'поле: ' + n;
+    }
+    else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); return; }
+    else return;
+    save(); render();
+  });
+
+  $main.addEventListener('click', async function (e) {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.tagName === 'SELECT') return;
+    const act = b.dataset.act, i = +b.dataset.i, id = b.dataset.id;
+    const yes = b.dataset.yes === '1';
+    switch (act) {
+      case 'startOwn': {
+        const keep = C.newDay();
+        keep.brigadier = ''; day = keep; break;
+      }
+      case 'cancelConfirm': pendingConfirm = null; break;
+      case 'newDay':
+        if (!yes) { pendingConfirm = 'newDay'; break; }
+        pendingConfirm = null;
+        day.people = []; day.example = false;
+        { const dp = C.dateParts(day.date); const nd = dp ? new Date(dp.y, dp.m - 1, dp.d + 1) : new Date(Date.now() + 86400000);
+          day.date = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1) + '-' + C.pad2(nd.getDate()); }
+        day.gazelles.forEach(function (g) { g.contact = ''; });
+        day.zp = ''; day.replaceField = '-'; day.replaceShop = '-';
+        break;
+      case 'exportJson': {
+        const name = 'den_' + dateShort().replace('.', '_') + '_' + C.translit(day.brigadier || 'brigada') + '.json';
+        const data = Object.assign({}, day, { phonebook: book });
+        await offer(name, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+        return;
+      }
+      case 'importJson': document.getElementById('fileOpen').click(); return;
+      case 'gKind': day.gazelles[i].kind = b.dataset.v; break;
+      case 'gVehicle': {
+        const g = day.gazelles[i];
+        if ((g.vehicle || 'газель') === b.dataset.v) return;
+        g.vehicle = b.dataset.v;
+        if (g.vehicle === 'машина' && +g.capacity >= 10) g.capacity = 5;
+        if (g.vehicle === 'газель' && +g.capacity < 10) g.capacity = 19;
+        break;
+      }
+      case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; day.gazelles.push(g); break; }
+      case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'pKind': { const p = person(id); p.kind = p.kind === 'цех' ? 'поле' : 'цех'; break; }
+      case 'pMore': if (openRows.has(id)) openRows.delete(id); else openRows.add(id); render(); return;
+      case 'gUp': case 'gDown': {
+        const j = act === 'gUp' ? i - 1 : i + 1;
+        if (j < 0 || j >= day.gazelles.length) return;
+        const g = day.gazelles; const tmp = g[i]; g[i] = g[j]; g[j] = tmp; break;
+      }
+      case 'gAdd': day.gazelles.push(C.newGazelle()); break;
+      case 'gDel':
+        if (!yes) { pendingConfirm = 'gDel' + i; break; }
+        pendingConfirm = null;
+        { const gid = day.gazelles[i].id; day.people.forEach(function (p) { if (p.gazId === gid) p.gazId = ''; }); day.gazelles.splice(i, 1); }
+        break;
+      case 'parse': {
+        const text = document.getElementById('vkText').value;
+        const dp = C.dateParts(day.date);
+        if (!dp) { parseReport = '<div class="note">Сначала укажите дату на вкладке «День».</div>'; break; }
+        if (day.example) { const fresh = C.newDay(); fresh.date = day.date; day = fresh; }
+        const r = C.parseVk(text, dp.d, dp.m, stopsList());
+        const existing = {};
+        day.people.forEach(function (p) { existing[C.norm(C.personLabel(p))] = true; });
+        let added = 0, dup = [];
+        r.people.forEach(function (x) {
+          const k = C.norm(C.personLabel(x));
+          if (existing[k]) { dup.push(C.personLabel(x)); return; }
+          existing[k] = true;
+          const np = { id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw };
+          if (np.phone) rememberPhone(np); else fillPhone(np);
+          day.people.push(np);
+          added++;
+        });
+        const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
+        const other = r.skipped.filter(function (s) { return s.reason === 'другая дата'; }).length;
+        const bad = r.skipped.filter(function (s) { return s.reason !== 'другая дата'; });
+        parseReport = '<div class="note">Добавлено: ' + added + '. ' +
+          (flagged ? 'Проверить: ' + flagged + ' (помечены ⚠). ' : '') +
+          (dup.length ? 'Уже были в списке: ' + esc(dup.join(', ')) + '. ' : '') +
+          (other ? 'Строк с другой датой: ' + other + '. ' : '') +
+          (bad.length ? '<br>Не разобрал: ' + bad.map(function (s) { return '«' + esc(s.raw) + '»'; }).join(', ') : '') + '</div>';
+        break;
+      }
+      case 'pAdd': {
+        const g = gById(b.dataset.g);
+        day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: g && g.kind === 'Цех' ? 'цех' : 'поле', phone: '', gazId: b.dataset.g, status: 'ok', flags: [] });
+        break;
+      }
+      case 'pStatus': { const p = person(id); const was = p.status; p.status = b.dataset.v; if ((was === 'refused') !== (p.status === 'refused')) toEnd(p); break; }
+      case 'pUp': moveWithin(person(id), -1); break;
+      case 'pDown': moveWithin(person(id), 1); break;
+      case 'pDel': day.people.splice(day.people.indexOf(person(id)), 1); break;
+      case 'pOk': person(id).flags = []; break;
+      case 'dlWord': case 'dlExcel':
+        try { b.disabled = true; await (act === 'dlWord' ? downloadWord() : downloadExcel()); }
+        catch (err) { const m = document.getElementById('dlMsg'); if (m) m.textContent = 'Ошибка при сборке файла: ' + err.message; }
+        finally { b.disabled = false; }
+        return;
+      default: return;
+    }
+    save(); render();
+  });
+
+  document.getElementById('fileOpen').addEventListener('change', function (e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = function () {
+      try {
+        day = migrate(JSON.parse(rd.result));
+        Object.assign(book, day.phonebook || {});
+        saveBook();
+        delete day.phonebook;
+        day.example = false; save(); tab = 'people'; render();
+      }
+      catch (err) { parseReport = '<div class="note">Это не файл дня: ' + esc(err.message) + '</div>'; render(); }
+    };
+    rd.readAsText(f);
+    e.target.value = '';
+  });
+
+  render();
+})();
+</script>
