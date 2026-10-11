@@ -331,7 +331,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   const TALLY_KEY = 'zubilikha_tally_v1';
   let tally = {};
   try { tally = JSON.parse(localStorage.getItem(TALLY_KEY) || '{}') || {}; } catch (e) { tally = {}; }
-  let tallyMonth = '', tallyNote = '';
+  let tallyMonth = '', tallyNote = '', tallyOpen = false;
   function saveTally() { safeSet(TALLY_KEY, JSON.stringify(tally)); }
   // Текущий день записывается сам, пока его не поправили руками.
   function recordTally() {
@@ -959,7 +959,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     return '<div class="card"><h2>Газели за месяц</h2>' +
       '<div class="row tmonth"><button class="btn small" data-act="tallyMonth" data-v="-1" aria-label="Прошлый месяц">‹</button><b>' + esc(title.charAt(0).toUpperCase() + title.slice(1)) + ' ' + p[0] + '</b><button class="btn small" data-act="tallyMonth" data-v="1" aria-label="Следующий месяц">›</button></div>' +
       '<div class="muted">Сколько газелей с людьми было у Димы (Д) и у Миши (М). День записывается сам, пока его не поправили руками. Машины и «заявки нет» не считаются.</div>' +
-      (rows || '<div class="muted">В этом месяце пока пусто.</div>') +
+      (rows ? '<details id="tallyDays" class="backup"' + (tallyOpen ? ' open' : '') + '><summary>Дни (' + t.keys.length + ')</summary>' + rows + '</details>' : '<div class="muted">В этом месяце пока пусто.</div>') +
       '<div class="total">Итого: Д <b>' + t.d + '</b>, М <b>' + t.m + '</b>' + ' · ' + (t.d === t.m ? 'поровну' : (t.d > t.m ? 'Миша' : 'Дима') + ' отстаёт на ' + Math.abs(t.d - t.m)) + '</div>' +
       '<div class="row"><input type="date" id="tallyAdd" style="width:auto"><button class="btn" data-act="tallyAdd">Добавить день</button><button class="btn" data-act="tallyCopy">Скопировать текстом</button></div>' +
       '<details class="backup"><summary>Вставить текстом</summary>' +
@@ -1384,6 +1384,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   // Плавно раскрываю только тот блок, который открыли сейчас.
   $main.addEventListener('toggle', function (e) {
     const d = e.target;
+    if (d.id === 'tallyDays') tallyOpen = d.open;
     if (d.tagName !== 'DETAILS' || !d.open) return;
     d.classList.add('opening');
     setTimeout(function () { d.classList.remove('opening'); }, 400);
@@ -1469,7 +1470,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         const v = (document.getElementById('tallyAdd') || {}).value || '';
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
         if (!tally[v]) tally[v] = { d: 0, m: 0, manual: true };
-        tallyMonth = v.slice(0, 7); saveTally(); queueSync(); render(); return;
+        tallyMonth = v.slice(0, 7); tallyOpen = true; saveTally(); queueSync(); render(); return;
       }
       case 'tallyPaste': {
         const ym = tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
