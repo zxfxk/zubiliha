@@ -609,12 +609,67 @@
     };
   }
 
+  // ---------- этап 3: слияние правок двух человек ----------
+  // base — что было у обоих последний раз, local — моё, remote — пришло от второго человека.
+  // Побеждает то, что поменял кто-то один; если поменяли оба одно и то же — побеждает моё.
+
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function clone(x) { return x === undefined ? undefined : JSON.parse(JSON.stringify(x)); }
+
+  // Плоский объект: каждое поле отдельно.
+  function mergeMap(base, local, remote, skip) {
+    base = base || {}; local = local || {}; remote = remote || {};
+    const out = {};
+    const keys = {};
+    [base, local, remote].forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = true; }); });
+    Object.keys(keys).forEach(function (k) {
+      if (skip && skip.indexOf(k) >= 0) return;
+      const v = same(local[k], base[k]) ? remote[k] : local[k];
+      if (v !== undefined) out[k] = clone(v);
+    });
+    return out;
+  }
+
+  // Список объектов с id (люди, газели): по каждому элементу целиком, порядок — чей поменялся.
+  function mergeList(base, local, remote) {
+    base = base || []; local = local || []; remote = remote || [];
+    const byId = function (list) { const m = {}; list.forEach(function (x) { m[x.id] = x; }); return m; };
+    const B = byId(base), L = byId(local), R = byId(remote);
+    const pick = function (id) {
+      const b = B[id], l = L[id], r = R[id];
+      if (l && r) return same(l, b) ? r : l;
+      if (l) return !b || !same(l, b) ? l : null;   // у второго удалён: оставляю, только если я его менял
+      if (r) return !b || !same(r, b) ? r : null;   // у меня удалён: оставляю, только если второй его менял
+      return null;
+    };
+    const ids = function (list) { return list.map(function (x) { return x.id; }); };
+    const common = function (list) { return ids(list).filter(function (id) { return B[id]; }); };
+    const localMoved = !same(common(local), ids(base).filter(function (id) { return L[id]; }));
+    const first = localMoved ? local : remote, second = localMoved ? remote : local;
+    const out = [], seen = {};
+    first.concat(second).forEach(function (x) {
+      if (seen[x.id]) return;
+      seen[x.id] = true;
+      const v = pick(x.id);
+      if (v) out.push(clone(v));
+    });
+    return out;
+  }
+
+  function mergeDay(base, local, remote) {
+    if (!base) return clone(remote);
+    const out = mergeMap(base, local, remote, ['people', 'gazelles']);
+    out.gazelles = mergeList(base.gazelles, local.gazelles, remote.gazelles);
+    out.people = mergeList(base.people, local.people, remote.people);
+    return out;
+  }
+
   const Core = {
     DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, autoAssign: autoAssign, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
+    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

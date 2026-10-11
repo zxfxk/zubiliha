@@ -41,7 +41,7 @@ header.top {
   border-bottom: 1px solid var(--line); padding-block: 10px; margin-inline: -16px; padding-inline: 16px;
 }
 .top h1 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
-.top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: pre-line; }
 nav.tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -188,14 +188,14 @@ details > summary { cursor: pointer; font-weight: 600; }
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); }
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); queueSync(); }
 
   // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
   const BOOK_KEY = 'zubilikha_phones_v1';
   let book = {};
   try { book = JSON.parse(localStorage.getItem(BOOK_KEY) || '{}') || {}; } catch (e) { book = {}; }
   function bookKey(p) { return C.norm(C.personLabel(p)); }
-  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); }
+  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); queueSync(); }
   function rememberPhone(p) {
     const k = bookKey(p);
     if (!k) return;
@@ -216,6 +216,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     if (!k) return;
     if (v) marks[k] = true; else delete marks[k];
     safeSet(MARKS_KEY, JSON.stringify(marks));
+    queueSync();
   }
 
   // Настройки газелей по датам, чтобы взять «как в прошлый раз».
@@ -315,7 +316,8 @@ details > summary { cursor: pointer; font-weight: 600; }
     document.getElementById('subtitle').textContent =
       (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' +
       (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
-      (noshow ? ' · не вышли ' + noshow : '');
+      (noshow ? ' · не вышли ' + noshow : '') +
+      (syncLine() ? '\n' + syncLine() : '');
   }
 
   // ---------- вкладки ----------
@@ -373,6 +375,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
       '</div>' +
 
+      syncCard() +
       '<div class="card"><h2>Файл дня</h2>' +
       '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
       '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
@@ -764,6 +767,158 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
 
   // ---------- скачивание ----------
+
+  // ---------- Общий день (этап 3) ----------
+  // На странице в Claude день, телефоны и отметки лежат в общей базе страницы: оба человека видят и правят одно и то же.
+  // Вход — аккаунт Claude, доступ даёт владелец через «Поделиться». На GitHub-сайте всё по-старому: только в этом браузере.
+  // Правки сливаются: если двое поменяли разное, сохраняется и то и другое (Core.mergeDay).
+  const sync = {
+    on: false, readOnly: false, me: null, user: null, dayRef: null, bookRef: null,
+    base: null, rev: null, bookBase: null, bookRev: null, missing: false,
+    timer: null, busy: false, again: false, by: null, at: 0, byName: '', err: '',
+  };
+  let renderLater = false;
+  function editing() { const a = document.activeElement; return !!a && $main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+  // Пока человек печатает, чужие правки не перерисовывают поле под пальцем — покажу после.
+  function rerender() { if (editing()) renderLater = true; else render(); }
+  $main.addEventListener('focusout', function () {
+    setTimeout(function () { if (renderLater && !editing()) { renderLater = false; render(); } }, 0);
+  });
+  function plainDay() { const d = JSON.parse(JSON.stringify(day)); delete d.example; return d; }
+  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)) }; }
+
+  async function initSync() {
+    if (!(window.claude && window.claude.use)) return;
+    const db = await window.claude.use('db').catch(function () { return null; });
+    if (!db) return;
+    sync.user = await window.claude.use('user').catch(function () { return null; });
+    if (sync.user) {
+      try { sync.me = await sync.user.id(); } catch (e) { sync.me = null; }
+      try { if ((await sync.user.can('data.write')) === false) sync.readOnly = true; } catch (e) { /* не сказали — решит запись */ }
+    }
+    sync.on = true;
+    sync.dayRef = db.doc('shared/day');
+    sync.bookRef = db.doc('shared/book');
+    sync.dayRef.onSnapshot(onRemoteDay, onSyncError);
+    sync.bookRef.onSnapshot(onRemoteBook, onSyncError);
+    rerender();
+  }
+  function onSyncError(e) {
+    sync.err = e && e.code === 'revoked' ? 'Доступ к общему дню закрыт.' : 'Общий день не обновляется. Перезагрузите страницу.';
+    rerender();
+  }
+
+  function onRemoteDay(snap) {
+    if (!snap.exists) {
+      sync.missing = true;
+      // Общего дня ещё нет: первый, кто начнёт свой день, его создаст.
+      if (!day.example) queueSync();
+      rerender();
+      return;
+    }
+    sync.missing = false;
+    const d = snap.data();
+    sync.by = d.by || null; sync.at = d.at || 0;
+    resolveName();
+    if (d.rev === sync.rev) { rerender(); return; } // моя же запись или уже учтено
+    const remote = migrate(JSON.parse(JSON.stringify(d.day || {})));
+    const mine = plainDay();
+    const changed = sync.base && !day.example ? JSON.stringify(mine) !== JSON.stringify(sync.base) : false;
+    day = changed ? migrate(C.mergeDay(sync.base, mine, remote)) : remote;
+    sync.base = JSON.parse(JSON.stringify(remote));
+    sync.rev = d.rev;
+    safeSet(KEY, JSON.stringify(day));
+    if (changed) queueSync();
+    rerender();
+  }
+
+  function onRemoteBook(snap) {
+    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length) queueSync(); return; }
+    const d = snap.data();
+    if (d.rev === sync.bookRev) return;
+    const remote = { book: d.book || {}, marks: d.marks || {} };
+    const base = sync.bookBase || { book: {}, marks: {} };
+    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks) };
+    const changed = JSON.stringify(merged) !== JSON.stringify(remote);
+    book = merged.book; marks = merged.marks;
+    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks));
+    sync.bookBase = JSON.parse(JSON.stringify(remote));
+    sync.bookRev = d.rev;
+    if (changed) queueSync();
+    rerender();
+  }
+
+  async function resolveName() {
+    if (!sync.by || !sync.user) { sync.byName = ''; return; }
+    if (sync.by === sync.me) { sync.byName = 'вы'; return; }
+    try {
+      const ps = await sync.user.profiles([sync.by]);
+      const n = (ps[sync.by] && ps[sync.by].name) || 'второй человек';
+      if (n !== sync.byName) { sync.byName = n; updateTop(); }
+    } catch (e) { sync.byName = 'второй человек'; }
+  }
+
+  // Запись — не чаще раза в полсекунды, по одной за раз; перед записью подтягиваю свежее, чтобы не затереть чужое.
+  function queueSync() {
+    if (!sync.on || sync.readOnly || day.example) return;
+    clearTimeout(sync.timer);
+    sync.timer = setTimeout(pushSync, 600);
+  }
+  async function pushSync() {
+    if (sync.busy) { sync.again = true; return; }
+    sync.busy = true;
+    try {
+      const snap = await sync.dayRef.get();
+      if (snap.exists && snap.data().rev !== sync.rev) { onRemoteDay(snap); }
+      const payload = plainDay();
+      if (!snap.exists || JSON.stringify(payload) !== JSON.stringify(sync.base)) {
+        const rev = C.uid() + C.uid();
+        sync.rev = rev;
+        await sync.dayRef.set({ day: payload, rev: rev, by: sync.me || '', at: Date.now() });
+        sync.base = payload; sync.missing = false;
+      }
+      const bsnap = await sync.bookRef.get();
+      if (bsnap.exists && bsnap.data().rev !== sync.bookRev) onRemoteBook(bsnap);
+      const bp = bookData();
+      if (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase)) {
+        const rev = C.uid() + C.uid();
+        sync.bookRev = rev;
+        await sync.bookRef.set({ book: bp.book, marks: bp.marks, rev: rev, by: sync.me || '', at: Date.now() });
+        sync.bookBase = bp;
+      }
+      sync.err = '';
+    } catch (e) {
+      if (e && e.code === 'invalid_argument') { sync.readOnly = true; sync.err = 'У вас доступ только на просмотр: правки не попадут в общий день.'; }
+      else if (e && e.code === 'quota_exceeded') sync.err = 'Общая база переполнена: ' + (e.message || '');
+      else sync.err = 'Не получилось сохранить в общий день, попробую ещё раз при следующей правке.';
+      rerender();
+    } finally {
+      sync.busy = false;
+      if (sync.again) { sync.again = false; queueSync(); }
+    }
+    updateTop();
+  }
+
+  function syncLine() {
+    if (!sync.on) return '';
+    if (sync.err) return sync.err;
+    const t = sync.at ? new Date(sync.at) : null;
+    const when = t ? C.pad2(t.getHours()) + ':' + C.pad2(t.getMinutes()) : '';
+    return 'Общий день' + (sync.readOnly ? ' (только просмотр)' : '') + (sync.byName && when ? ' · правка: ' + sync.byName + ', ' + when : '');
+  }
+
+  function syncCard() {
+    if (sync.on) {
+      return '<div class="card"><h2>Общий доступ</h2><div class="muted">' +
+        (sync.readOnly ? 'Вы видите общий день, но менять его не можете. Попросите владельца страницы дать вам доступ «Редактор».'
+          : 'День, телефоны и отметки общие для всех, кому открыта эта страница. Правки второго человека появляются сами, через пару секунд.') +
+        ' Второго человека добавляет владелец страницы: кнопка «Поделиться» вверху страницы, его почта, доступ «Редактор». Входить нужно под своим аккаунтом Claude.</div>' +
+        (sync.missing && day.example ? '<div class="note">Общий день ещё пустой. Нажмите «Начать свой день», и он станет общим.</div>' : '') +
+        '</div>';
+    }
+    return '<div class="card"><h2>Общий доступ</h2><div class="muted">На этом сайте день хранится только в этом браузере. Общий день для двоих работает на странице в Claude. Ещё можно передавать день файлом: «Сохранить день в файл» и «Открыть файл дня» ниже.</div></div>';
+  }
+
   let dlCap = null;
   if (window.claude && window.claude.use) {
     dlCap = window.claude.use('downloads').catch(function () { return null; });
@@ -1065,5 +1220,6 @@ details > summary { cursor: pointer; font-weight: 600; }
   });
 
   render();
+  initSync();
 })();
 </script>
