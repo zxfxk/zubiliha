@@ -105,6 +105,32 @@ assert.deepStrictEqual(C.fileNames(day), {
   assert.strictEqual(ws2.getCell('H8').value, 'Итого: 8000');
   await D.Packer.toBuffer(Gen.buildWord(d2, D));
 
+  // Бензин водителю машины, без бригадира — без него в имени файла и в Excel.
+  car.fuel = '1000';
+  d2.people.find((p) => p.surname === 'Водилов').driver = true;
+  d2.brigadier = '';
+  assert.deepStrictEqual(C.fileNames(d2), { word: '22_09_1gazel_1mashina_Zubilikha.docx', excel: '22_09_2026_brigada_4chel.xlsx' });
+  const ws3 = Gen.buildExcel(d2, ExcelJS).worksheets[0];
+  assert.strictEqual(ws3.getCell('L6').value, 5500);
+  assert.strictEqual(ws3.getCell('C2').value, null);
+  car.fuel = '1000';
+  d2.people.find((p) => p.surname === 'Водилов').driver = false;
+  assert.ok(C.warnings(d2).some((w) => /бензин/.test(w)));
+  d2.people.find((p) => p.surname === 'Водилов').driver = true;
+  // В машине нет строки «По остановкам прошу отписаться».
+  const JSZip = require('jszip');
+  const xml = await (await JSZip.loadAsync(await D.Packer.toBuffer(Gen.buildWord(d2, D)))).file('word/document.xml').async('string');
+  assert.strictEqual((xml.match(/прошу отписаться/g) || []).length, 1);
+
+  // Сортировка во всех газелях: по остановкам, внутри по фамилиям.
+  const d3 = C.newDay();
+  const g3 = d3.gazelles[0];
+  [['Бобров', 'Рынок'], ['Алов', 'Художка'], ['Ахов', 'Рынок'], ['Без', '']].forEach(([s, st]) => d3.people.push({ id: C.uid(), surname: s, initial: 'А', stop: st, gazId: g3.id, status: 'ok' }));
+  C.sortAll(d3, 'stop');
+  assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Без', 'Ахов', 'Бобров', 'Алов']);
+  C.sortAll(d3, 'name');
+  assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Алов', 'Ахов', 'Без', 'Бобров']);
+
   C.sortAlpha(d2, mix.id);
   assert.deepStrictEqual(d2.people.filter((p) => p.gazId === mix.id).map((p) => p.surname), ['Поляков', 'Цехова', 'Яковлев']);
 
