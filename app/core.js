@@ -428,14 +428,66 @@
         w.push('Машина ' + (i + 1) + ': не отмечен водитель, бензин в Excel не попадёт.');
       }
     });
-    const seen = {};
-    day.people.forEach(function (p) {
-      if (p.status === 'refused') return;
-      const k = norm(personLabel(p));
-      if (seen[k]) w.push('Повтор: ' + personLabel(p));
-      seen[k] = true;
+    return w.concat(duplicates(day));
+  }
+
+  // Расстояние Левенштейна без ограничений (для подсказок).
+  function levFull(a, b) {
+    let prev = [];
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  // Где человек: «Газель 2», «Машина 3» или «без газели».
+  function placeOf(day, p) {
+    const i = day.gazelles.findIndex(function (g) { return g.id === p.gazId; });
+    if (i < 0) return 'без газели';
+    return (day.gazelles[i].vehicle === 'машина' ? 'Машина ' : 'Газель ') + (i + 1);
+  }
+
+  // Похоже на одного человека: та же «Фамилия И», или фамилия с одной опечаткой при том же инициале,
+  // или та же фамилия, где у одного инициал не указан.
+  function duplicates(day) {
+    const list = day.people.filter(function (p) { return p.status !== 'refused' && String(p.surname || '').trim(); });
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        const sa = norm(a.surname), sb = norm(b.surname);
+        const ia = norm(a.initial), ib = norm(b.initial);
+        let what = '';
+        if (sa === sb && ia === ib) what = 'Повтор';
+        else if (sa === sb && (!ia || !ib)) what = 'Похоже на одного человека';
+        else if (ia === ib && Math.min(sa.length, sb.length) >= 4 && levFull(sa, sb) <= 1 && sa.replace(/а$/, '') !== sb.replace(/а$/, '')) what = 'Похоже на одного человека';
+        if (what) out.push(what + ': ' + personLabel(a) + ' (' + placeOf(day, a) + ') и ' + personLabel(b) + ' (' + placeOf(day, b) + ')');
+      }
+    }
+    return out;
+  }
+
+  // Ближайшая остановка из справочника для нераспознанной: по опечатке или началу слова.
+  function suggestStop(text, stops) {
+    const t = norm(text).replace(/ /g, '');
+    if (t.length < 3 || stopInfo(text, stops)) return null;
+    let best = null;
+    stops.forEach(function (stop) {
+      stop.aliases.forEach(function (alias) {
+        const a = alias.join('');
+        if (!a) return;
+        let d = levFull(t, a);
+        if (a.length >= 3 && (a.startsWith(t) || t.startsWith(a))) d = Math.min(d, 0.5);
+        const limit = Math.max(1, Math.floor(Math.max(t.length, a.length) * 0.34));
+        if (d <= limit && (!best || d < best.d)) best = { stop: stop, d: d };
+      });
     });
-    return w;
+    return best ? best.stop.name : null;
   }
 
   // ---------- этап 2: распределение по газелям ----------
@@ -669,7 +721,7 @@
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
+    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
