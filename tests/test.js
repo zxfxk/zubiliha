@@ -238,5 +238,22 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.strictEqual(C.suggestStop('абвгдеж', stops), null);
   }
 
+  // Строки без даты: «Фамилия И остановка [цех]» берём с пометкой, имена авторов и служебное пропускаем.
+  {
+    const stops = C.parseStops(C.DEFAULT_STOPS);
+    const text = ['Лидия Тестова', '21:00', 'Тестова Л 3 комм', 'Пробова Е 3 школа цех', 'Наталья Пример',
+      'Примерова А. Стекляшка (цех)', '(ред.)', 'Новые сообщения', 'Иванов А', 'Оля Н завтра буду',
+      '12.10 Сидоров В Рынок поле', '13.10 Другов Г Рынок'].join('\n');
+    const r = C.parseVk(text, 12, 10, stops);
+    const got = r.people.map(function (p) { return [p.surname, p.initial, p.stop, p.kind, p.flags.indexOf('без даты') >= 0].join('|'); });
+    assert.deepStrictEqual(got, [
+      'Тестова|Л|3комм|поле|true',
+      'Пробова|Е|3шк|цех|true',
+      'Примерова|А|Стекляшка|цех|true',
+      'Сидоров|В|Рынок|поле|false',
+    ]);
+    assert.deepStrictEqual(r.skipped.map(function (x) { return x.reason; }), ['другая дата']);
+  }
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });

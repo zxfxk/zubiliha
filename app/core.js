@@ -127,6 +127,8 @@
 
   // ---------- разбор текста из ВК ----------
 
+ // «Фамилия И» или «Фамилия И.» в начале строки, дальше что-то ещё.
+  const UNDATED_RE = /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.?(?=[\s,(]|$)\s*[,(]?\s*\S/;
   const DATE_RE = /^\s*(\d{1,2})\s*[.,/\- ]\s*(\d{1,2})\.?\s*(.*)$/;
 
   function cap(s) { return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s; }
@@ -149,11 +151,20 @@
       const line = rawLine.trim();
       if (!line) return;
       const m = line.match(DATE_RE);
-      if (!m) return; // имена, статусы, «вышла из чата»
-      const d = +m[1], mo = +m[2];
-      if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
-      if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
-      const ph = extractPhone(m[3]);
+      let body;
+      let undated = false;
+      if (m) {
+        const d = +m[1], mo = +m[2];
+        if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
+        if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
+        body = m[3];
+      } else {
+        // Без даты берём только строки вида «Фамилия И остановка [цех]»; имена авторов, время и «(ред.)» пропускаем.
+        if (!UNDATED_RE.test(fixLetters(line))) return;
+        body = line;
+        undated = true;
+      }
+      const ph = extractPhone(body);
       const words = fixLetters(ph.rest).split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
       const lower = words.map(function (w) { return norm(w); });
       const flags = [];
@@ -161,6 +172,7 @@
       let kind = '';
       const isKind = function (i) { return lower[i] === 'поле' || lower[i] === 'цех'; };
       lower.forEach(function (w) { if (w === 'поле' || w === 'цех') kind = kind && kind !== w ? 'оба?' : w; });
+      const kindGiven = !!kind;
       if (!kind) { kind = 'поле'; flags.push('не указано поле/цех'); }
       if (kind === 'оба?') { kind = 'поле'; flags.push('и поле, и цех'); }
 
@@ -208,7 +220,12 @@
         // «Иванов А Новаяостановка»: последнее слово без инициала — скорее всего неизвестная остановка.
         leftover.unshift(persons.pop().surname);
       }
-      if (!persons.length) { skipped.push({ raw: line, reason: 'не найдена фамилия' }); return; }
+      if (!persons.length) { if (!undated) skipped.push({ raw: line, reason: 'не найдена фамилия' }); return; }
+      if (undated) {
+        // Без даты и без остановки/цеха это скорее не запись, а просто сообщение.
+        if (!sm && !kindGiven) return;
+        flags.unshift('без даты');
+      }
       if (!stopName) {
         flags.push('остановка не распознана');
         stopName = leftover.join(' ');

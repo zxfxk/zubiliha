@@ -619,7 +619,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const stops = stopsList();
     let h = '<section>';
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
-      '<div class="muted">Скопируйте сообщения из чата целиком. Возьму только строки с датой ' + esc(dateShort()) + ', остальное пропущу.</div>' +
+      '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
       '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле"></textarea>' +
       '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button></div>' +
       (parseReport ? parseReport : '') +
