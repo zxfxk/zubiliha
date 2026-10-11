@@ -154,7 +154,28 @@ details.backup { margin-top: 12px; }
 details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted, inherit); }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .banner { border: 1px dashed var(--accent); border-radius: var(--r); padding: 12px; display: grid; gap: 8px; }
-@media (prefers-reduced-motion: no-preference) { .btn, .seg button { transition: background .15s; } }
+/* Кот сидит на поле даты; клики проходят сквозь него. */
+.datecat { position: relative; }
+.kot { position: absolute; right: 6px; bottom: 33px; width: 72px; height: auto; pointer-events: none; z-index: 1; filter: drop-shadow(0 2px 3px rgb(0 0 0 / .25)); }
+@media (min-width: 1000px) { .kot { width: 100px; right: 44px; bottom: 34px; } }
+/* Анимации: короткие, только если в системе не выключено движение. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .seg button, .chip, .iconbtn, nav.tabs button { transition: background-color .15s, color .15s, box-shadow .15s, transform .12s; }
+  .btn:active, .chip:active, .iconbtn:active, .seg button:active { transform: scale(.96); }
+  nav.tabs button:active { transform: scale(.94); }
+  main.enter .card, main.enter .banner { animation: rise .22s cubic-bezier(.2, .7, .3, 1) both; }
+  main.enter section > :nth-child(2) { animation-delay: .03s; }
+  main.enter section > :nth-child(3) { animation-delay: .06s; }
+  main.enter section > :nth-child(n+4) { animation-delay: .09s; }
+  .person.flash { animation: flash .9s ease-out; }
+  details[open] > :not(summary) { animation: rise .18s ease-out both; }
+  main.enter .kot { animation: kotIn .35s cubic-bezier(.3, 1.4, .5, 1) both; }
+  input, select, textarea { transition: border-color .15s, background-color .15s; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes flash { from { background: var(--warn-bg); box-shadow: 0 0 0 6px var(--warn-bg); } }
+@keyframes kotIn { from { opacity: 0; transform: translateY(10px) scale(.9); } }
+.person { border-radius: 6px; }
 </style>
 
 <div class="wrap">
@@ -206,6 +227,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   let day = load() || exampleDay();
   let tab = safeGet(TAB_KEY) || 'people';
   const openRows = new Set();
+  const flashIds = new Set(); // строки, которые только что добавили или переложили: мягко подсвечиваются
+  let shownTab = null;
   let parseReport = null;
   let assignReport = null;
   let pendingConfirm = null;
@@ -415,6 +438,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const html = ({ day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles, issues: renderIssues }[tab] || renderPeople)();
     $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
+    flashIds.clear();
+    // Карточки плавно появляются только при смене вкладки, а не на каждое нажатие.
+    if (shownTab !== tab) { shownTab = tab; $main.classList.remove('enter'); void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
   }
 
@@ -432,7 +458,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     return '<section>' +
       '<div class="card"><h2>День</h2>' +
       '<div class="grid2">' +
-      '<label>Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '"></label>' +
+      '<label class="datecat">Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '">' +
+      '<img class="kot" src="icons/kot.webp" alt="" aria-hidden="true" width="240" height="186"></label>' +
       field('Место (для имени файла)', 'place', day.place) +
       '</div>' + '<div class="grid2">' + field('Нам за человека, ₽', 'rate', day.rate, 'inputmode="numeric"') + '</div>' +
       (showBrig || String(day.brigadier || '').trim()
@@ -739,7 +766,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const st = p.status || 'ok';
     const g = gById(p.gazId);
     const inCar = !!g && g.vehicle === 'машина';
-    return '<div class="person ' + st + '" data-id="' + p.id + '">' +
+    return '<div class="person ' + st + (flashIds.has(p.id) ? ' flash' : '') + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
@@ -1272,7 +1299,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       save(); render(); return;
     }
     const act = t.dataset.act;
-    if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); }
+    if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flashIds.add(p.id); }
     else if (act === 'moveAll' && t.value) {
       day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
     }
@@ -1410,6 +1437,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           const np = { id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw };
           if (np.phone) rememberPhone(np); else fillPhone(np);
           day.people.push(np);
+          flashIds.add(np.id);
           added++;
         });
         const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
@@ -1440,7 +1468,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }
       case 'pSeat': {
         const p = person(id);
-        p.gazId = b.dataset.g; toEnd(p);
+        p.gazId = b.dataset.g; toEnd(p); flashIds.add(p.id);
         break;
       }
       case 'shotCopy':
