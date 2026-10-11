@@ -270,6 +270,9 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.ok(/BFBFBF/.test(xml));
     const t = C.tallyText({ '2026-10-01': { d: 1, m: 1 }, '2026-10-11': { d: 1, m: 2 }, '2026-09-30': { d: 5, m: 0 } }, '2026-10');
     assert.strictEqual(t.text, 'Октябрь:\n1-1д/1м\n11-1д/2м\nИтого: Д 2, М 3');
+    const pt = C.parseTally('Октябрь:\n1- 1 Д/1м\n3-2д/2м\n 11 - 1Д / 2 М\nчто-то\nИтого: Д 4, М 5', '2026-09');
+    assert.deepStrictEqual(pt, { '2026-10-01': { d: 1, m: 1 }, '2026-10-03': { d: 2, m: 2 }, '2026-10-11': { d: 1, m: 2 } });
+    assert.deepStrictEqual(C.parseTally(t.text, '2026-10'), { '2026-10-01': { d: 1, m: 1 }, '2026-10-11': { d: 1, m: 2 } });
   }
 
   console.log('ok');

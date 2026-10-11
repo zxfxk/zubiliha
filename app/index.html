@@ -331,7 +331,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   const TALLY_KEY = 'zubilikha_tally_v1';
   let tally = {};
   try { tally = JSON.parse(localStorage.getItem(TALLY_KEY) || '{}') || {}; } catch (e) { tally = {}; }
-  let tallyMonth = '';
+  let tallyMonth = '', tallyNote = '';
   function saveTally() { safeSet(TALLY_KEY, JSON.stringify(tally)); }
   // Текущий день записывается сам, пока его не поправили руками.
   function recordTally() {
@@ -962,7 +962,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       (rows || '<div class="muted">В этом месяце пока пусто.</div>') +
       '<div class="total">Итого: Д <b>' + t.d + '</b>, М <b>' + t.m + '</b>' + (t.d !== t.m ? ' · ' + (t.d > t.m ? 'Миша' : 'Дима') + ' отстаёт на ' + Math.abs(t.d - t.m) : '') + '</div>' +
       '<div class="row"><input type="date" id="tallyAdd" style="width:auto"><button class="btn" data-act="tallyAdd">Добавить день</button><button class="btn" data-act="tallyCopy">Скопировать текстом</button></div>' +
-      '<div id="tallyMsg" class="muted" role="status"></div></div>';
+      '<details class="backup"><summary>Вставить текстом</summary>' +
+      '<div class="muted">Строки вида «1- 1 Д/1м». Строка с названием месяца («Октябрь:») задаёт месяц, иначе берётся показанный. Эти дни заменятся.</div>' +
+      '<textarea id="tallyPaste" rows="6" spellcheck="false" placeholder="Октябрь:&#10;1- 1 Д/1м&#10;2- 1 Д/1м"></textarea>' +
+      '<div class="row"><button class="btn" data-act="tallyPaste">Внести</button></div></details>' +
+      '<div id="tallyMsg" class="muted" role="status">' + esc(tallyNote) + '</div></div>';
   }
 
   function previewHtml() {
@@ -1457,7 +1461,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'tallyMonth': {
         const ym = (tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7)).split('-');
         const nd = new Date(+ym[0], +ym[1] - 1 + (+b.dataset.v), 1);
-        tallyMonth = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1);
+        tallyMonth = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1); tallyNote = '';
         render(); return;
       }
       case 'tallyDel': delete tally[b.dataset.k]; saveTally(); queueSync(); render(); return;
@@ -1466,6 +1470,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
         if (!tally[v]) tally[v] = { d: 0, m: 0, manual: true };
         tallyMonth = v.slice(0, 7); saveTally(); queueSync(); render(); return;
+      }
+      case 'tallyPaste': {
+        const ym = tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
+        const got = C.parseTally((document.getElementById('tallyPaste') || {}).value, ym);
+        const ks = Object.keys(got).sort();
+        if (!ks.length) { tallyNote = 'Не нашёл строк вида «1- 1 Д/1м».'; render(); return; }
+        ks.forEach(function (k) { tally[k] = { d: got[k].d, m: got[k].m, manual: true }; });
+        tallyMonth = ks[0].slice(0, 7); tallyNote = 'Внесено дней: ' + ks.length + '.';
+        saveTally(); queueSync(); render(); return;
       }
       case 'tallyCopy': {
         const ym = tallyMonth || (day.date || '').slice(0, 7) || new Date().toISOString().slice(0, 7);
