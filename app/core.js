@@ -131,6 +131,35 @@
   const UNDATED_RE = /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.?(?=[\s,(]|$)\s*[,(]?\s*\S/;
   const DATE_RE = /^\s*(\d{1,2})\s*[.,/\- ]\s*(\d{1,2})\.?\s*(.*)$/;
 
+  // Дата посреди строки: «Иванова А рынок 12.10цех». Только через точку, чтобы не спутать с номерами.
+  const MID_DATE_RE = /(^|[^\d.\/])(\d{1,2})\.(\d{1,2})(?!\d)\.?/;
+  // «могу на л/а», «на легковой» — человек согласен ехать на машине.
+  const CAR_RE = /(?:могу\s+)?(?:и\s+)?на\s+(?:л\s*\/\s*а|легков\S*)\.?|\bл\s*\/\s*а\b\.?/gi;
+  // Слова, которые не бывают фамилиями.
+  const NOT_NAMES = ['могу', 'на', 'в', 'и', 'или', 'тоже', 'еще', 'пожалуйста', 'буду', 'поеду', 'еду', 'едем', 'завтра', 'я', 'с', 'со', 'от', 'до', 'мы', 'нас', 'плюс', 'утром', 'хочу', 'есть', 'место', 'мест', 'чел', 'человек', 'нет'];
+
+  // Сообщение в ВК может идти в несколько строк: «12.10», потом «Иванова А.», потом «Рынок», «Цех.».
+  // Строку с одной датой склеиваю со следующими строками до пустой строки или следующей даты.
+  function joinMessages(text) {
+    const src = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); });
+    const out = [];
+    for (let i = 0; i < src.length; i++) {
+      const l = src[i];
+      if (!l) continue;
+      const m = l.match(DATE_RE);
+      if (m && !m[3].replace(/[\s.,!:;\-]+/g, '')) {
+        const parts = [l];
+        let j = i + 1;
+        while (j < src.length && src[j] && parts.length < 5 && !DATE_RE.test(src[j])) { parts.push(src[j]); j++; }
+        out.push(parts.join(' '));
+        i = j - 1;
+        continue;
+      }
+      out.push(l);
+    }
+    return out;
+  }
+
   function cap(s) { return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s; }
 
   // Латинские буквы-двойники внутри русских слов и «ë» → русские.
@@ -147,10 +176,9 @@
   function parseVk(text, day, month, stops) {
     const people = [];
     const skipped = [];
-    String(text || '').split(/\r?\n/).forEach(function (rawLine) {
-      const line = rawLine.trim();
-      if (!line) return;
+    joinMessages(text).forEach(function (line) {
       const m = line.match(DATE_RE);
+      const mm = m ? null : line.match(MID_DATE_RE);
       let body;
       let undated = false;
       if (m) {
@@ -158,6 +186,9 @@
         if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
         if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
         body = m[3];
+      } else if (mm && +mm[3] >= 1 && +mm[3] <= 12 && +mm[2] >= 1 && +mm[2] <= 31) {
+        if (+mm[2] !== day || +mm[3] !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
+        body = line.slice(0, mm.index) + mm[1] + ' ' + line.slice(mm.index + mm[0].length);
       } else {
         // Без даты берём только строки вида «Фамилия И остановка [цех]»; имена авторов, время и «(ред.)» пропускаем.
         if (!UNDATED_RE.test(fixLetters(line))) return;
@@ -165,9 +196,12 @@
         undated = true;
       }
       const ph = extractPhone(body);
-      const words = fixLetters(ph.rest).split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
-      const lower = words.map(function (w) { return norm(w); });
       const flags = [];
+      let rest = fixLetters(ph.rest);
+      if (CAR_RE.test(rest)) { flags.push('может на легковой'); rest = rest.replace(CAR_RE, ' '); }
+      CAR_RE.lastIndex = 0;
+      const words = rest.split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
+      const lower = words.map(function (w) { return norm(w); });
 
       let kind = '';
       const isKind = function (i) { return lower[i] === 'поле' || lower[i] === 'цех'; };
@@ -197,23 +231,32 @@
       // Остальное — люди: Фамилия [И].
       const persons = [];
       const leftover = [];
+      let initAt = -2;
       for (let i = 0; i < words.length; i++) {
         if (usedWords[i] || isKind(i)) continue;
         const w = words[i];
         if (/^\d+$/.test(w)) { leftover.push(w); continue; }
-        if (/^[А-Яа-яA-Za-z]$/.test(w)) {
-          const last = persons[persons.length - 1];
-          if (last && !last.initial) last.initial = w.toUpperCase();
-          else leftover.push(w);
+        const last = persons[persons.length - 1];
+        if (/^[А-Яа-яA-Za-z]$/.test(w) && last && (!last.initial || initAt === i - 1)) {
+          // Инициал, а следом за ним отчество («Иванов А.Е») — пропускаю.
+          if (!last.initial) { last.initial = w.toUpperCase(); initAt = i; }
           continue;
         }
-        const last = persons[persons.length - 1];
-        if (last && !last.initial && /^[А-ЯA-Z]/.test(w) && w.length >= 2 && !/^[А-ЯA-Z]+$/.test(w)) {
+        if (NOT_NAMES.indexOf(w.toLowerCase()) >= 0) continue;
+        if (/^[А-Яа-яA-Za-z]$/.test(w)) { leftover.push(w); continue; }
+        if (last && !last.initial && /^[А-ЯA-Z]/.test(w) && w.length <= 2) {
+          // «Петров Дм.» — сокращённое имя.
+          last.initial = w[0].toUpperCase(); initAt = i;
+          continue;
+        }
+        if (last && !last.initial && /^[А-ЯA-Z]/.test(w) && !/^[А-ЯA-Z]+$/.test(w)) {
           // «Иванова Мария» — второе слово похоже на имя: берём первую букву.
-          last.initial = w[0].toUpperCase();
+          last.initial = w[0].toUpperCase(); initAt = i;
           last.flags.push('инициал взят из имени «' + w + '»');
           continue;
         }
+        // Фамилия пишется с большой буквы; маленькими — только если это первое слово записи.
+        if (persons.length && !/^[А-ЯA-Z]/.test(w)) { leftover.push(w); continue; }
         persons.push({ surname: cap(w), initial: '', flags: [] });
       }
       if (!sm && persons.length > 1 && !persons[persons.length - 1].initial) {
@@ -229,12 +272,20 @@
       if (!stopName) {
         flags.push('остановка не распознана');
         stopName = leftover.join(' ');
+        stopName = stopName.charAt(0).toUpperCase() + stopName.slice(1);
       } else if (leftover.length) {
         flags.push('лишнее: ' + leftover.join(' '));
       }
       persons.forEach(function (p) {
         const f = flags.concat(p.flags);
         if (!p.initial) f.push('нет инициала');
+        // Одна и та же запись дважды (цитата в ВК, повторное сообщение): оставляю первую.
+        const key = norm(p.surname + ' ' + p.initial);
+        const twin = people.find(function (x) { return norm(x.surname + ' ' + x.initial) === key; });
+        if (twin) {
+          if (twin.stop !== stopName && twin.flags.indexOf('ещё раз с остановкой «' + stopName + '»') < 0) twin.flags.push('ещё раз с остановкой «' + stopName + '»');
+          return;
+        }
         people.push({ surname: p.surname, initial: p.initial, stop: stopName, kind: kind, phone: persons.length === 1 ? ph.phone : '', flags: f, raw: line });
       });
     });
