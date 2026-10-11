@@ -41,7 +41,7 @@ header.top {
   border-bottom: 1px solid var(--line); padding-block: 10px; margin-inline: -16px; padding-inline: 16px;
 }
 .top h1 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
-.top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: pre-line; }
 nav.tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -150,6 +150,21 @@ details > summary { cursor: pointer; font-weight: 600; }
 (function () {
   'use strict';
   const C = window.Core;
+  // Общая база для GitHub-сайта (Firebase). Эти данные не секретные: без пароля база никого не пускает.
+  // email — общий логин бригады (пусто — спрашиваем на экране входа), пароль знают только свои.
+  const FIREBASE = {
+    email: 'zubiliha@gmail.com',
+    config: {
+      apiKey: 'AIzaSyBvkZ64XTdkfzZJ6duLnQywFmTobrb4nrU',
+      authDomain: 'zubilikha.firebaseapp.com',
+      projectId: 'zubilikha',
+      storageBucket: 'zubilikha.firebasestorage.app',
+      messagingSenderId: '1051256864141',
+      appId: '1:1051256864141:web:442384f43c700f3fd851c4'
+    }
+  };
+  const useFirebase = !!FIREBASE.config && !(window.claude && window.claude.use);
+  const LOGIN_KEY = 'zubilikha_login';
   const KEY = 'zubilikha_day_v1';
   const TAB_KEY = 'zubilikha_tab';
   const $main = document.getElementById('main');
@@ -188,14 +203,14 @@ details > summary { cursor: pointer; font-weight: 600; }
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); }
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); updateTop(); queueSync(); }
 
   // Телефонная книжка: номер запоминается по «Фамилия И» и живёт между днями.
   const BOOK_KEY = 'zubilikha_phones_v1';
   let book = {};
   try { book = JSON.parse(localStorage.getItem(BOOK_KEY) || '{}') || {}; } catch (e) { book = {}; }
   function bookKey(p) { return C.norm(C.personLabel(p)); }
-  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); }
+  function saveBook() { safeSet(BOOK_KEY, JSON.stringify(book)); queueSync(); }
   function rememberPhone(p) {
     const k = bookKey(p);
     if (!k) return;
@@ -216,6 +231,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     if (!k) return;
     if (v) marks[k] = true; else delete marks[k];
     safeSet(MARKS_KEY, JSON.stringify(marks));
+    queueSync();
   }
 
   // Настройки газелей по датам, чтобы взять «как в прошлый раз».
@@ -307,6 +323,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   function stopsList() { return C.parseStops(day.stopsText); }
 
   function updateTop() {
+    if (login.need) { document.getElementById('title').textContent = 'Газели'; document.getElementById('subtitle').textContent = ''; return; }
     document.getElementById('title').textContent = (day.place || 'Газели') + ' · ' + dateTitle();
     const active = day.people.filter(function (p) { return p.status !== 'refused'; });
     const placed = active.filter(function (p) { return p.gazId; }).length;
@@ -315,7 +332,8 @@ details > summary { cursor: pointer; font-weight: 600; }
     document.getElementById('subtitle').textContent =
       (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' +
       (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
-      (noshow ? ' · не вышли ' + noshow : '');
+      (noshow ? ' · не вышли ' + noshow : '') +
+      (syncLine() ? '\n' + syncLine() : '');
   }
 
   // ---------- вкладки ----------
@@ -330,6 +348,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     document.querySelectorAll('#tabs button').forEach(function (b) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
+    if (login.need) { $main.innerHTML = loginHtml(); updateTop(); return; }
     const html = ({ day: renderDay, gaz: renderGaz, people: renderPeople, files: renderFiles, issues: renderIssues }[tab] || renderPeople)();
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
     updateTop();
@@ -373,6 +392,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
       '</div>' +
 
+      syncCard() +
       '<div class="card"><h2>Файл дня</h2>' +
       '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
       '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
@@ -764,6 +784,240 @@ details > summary { cursor: pointer; font-weight: 600; }
   }
 
   // ---------- скачивание ----------
+
+  // ---------- Общий день (этап 3) ----------
+  // На странице в Claude день, телефоны и отметки лежат в общей базе страницы: оба человека видят и правят одно и то же.
+  // Вход — аккаунт Claude, доступ даёт владелец через «Поделиться». На GitHub-сайте всё по-старому: только в этом браузере.
+  // Правки сливаются: если двое поменяли разное, сохраняется и то и другое (Core.mergeDay).
+  const sync = {
+    on: false, readOnly: false, me: null, user: null, dayRef: null, bookRef: null,
+    base: null, rev: null, bookBase: null, bookRev: null, missing: false,
+    timer: null, busy: false, again: false, by: null, at: 0, byName: '', err: '',
+  };
+  let renderLater = false;
+  function editing() { const a = document.activeElement; return !!a && $main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+  // Пока человек печатает, чужие правки не перерисовывают поле под пальцем — покажу после.
+  function rerender() { if (editing()) renderLater = true; else render(); }
+  $main.addEventListener('focusout', function () {
+    setTimeout(function () { if (renderLater && !editing()) { renderLater = false; render(); } }, 0);
+  });
+  function plainDay() { const d = JSON.parse(JSON.stringify(day)); delete d.example; return d; }
+  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)) }; }
+
+  async function initSync() {
+    if (!(window.claude && window.claude.use)) return;
+    const db = await window.claude.use('db').catch(function () { return null; });
+    if (!db) return;
+    sync.user = await window.claude.use('user').catch(function () { return null; });
+    if (sync.user) {
+      try { sync.me = await sync.user.id(); } catch (e) { sync.me = null; }
+      try { if ((await sync.user.can('data.write')) === false) sync.readOnly = true; } catch (e) { /* не сказали — решит запись */ }
+    }
+    startSync(db, 'claude');
+  }
+  function startSync(db, mode) {
+    if (sync.on) return;
+    sync.on = true; sync.mode = mode; sync.err = '';
+    sync.dayRef = db.doc('shared/day');
+    sync.bookRef = db.doc('shared/book');
+    sync.unsub = [sync.dayRef.onSnapshot(onRemoteDay, onSyncError), sync.bookRef.onSnapshot(onRemoteBook, onSyncError)];
+    rerender();
+  }
+  function stopSync() {
+    (sync.unsub || []).forEach(function (f) { try { f(); } catch (e) { /* уже отписано */ } });
+    sync.unsub = []; sync.on = false; sync.base = null; sync.rev = null; sync.bookBase = null; sync.bookRev = null;
+    clearTimeout(sync.timer);
+  }
+  function onSyncError(e) {
+    const code = e && e.code;
+    sync.err = code === 'revoked' ? 'Доступ к общему дню закрыт.'
+      : code === 'permission-denied' ? 'База не пускает. Проверьте правила доступа в Firestore.'
+      : 'Общий день не обновляется. Перезагрузите страницу.';
+    rerender();
+  }
+
+  // ---------- Вход на GitHub-сайте (Firebase) ----------
+  const NAME_KEY = 'zubilikha_myname';
+  let fb = null;
+  const login = { need: useFirebase, checking: useFirebase, err: '', busy: false };
+  function loadScript(src) {
+    return new Promise(function (res, rej) {
+      const el = document.createElement('script');
+      el.src = src; el.onload = res; el.onerror = function () { rej(new Error(src)); };
+      document.head.appendChild(el);
+    });
+  }
+  async function initFirebase() {
+    if (!useFirebase) return;
+    try {
+      for (const f of ['app', 'auth', 'firestore']) await loadScript('vendor/firebase/firebase-' + f + '-compat.js');
+      window.firebase.initializeApp(FIREBASE.config);
+      fb = { auth: window.firebase.auth(), db: window.firebase.firestore() };
+    } catch (e) {
+      login.checking = false; login.err = 'Не загрузилась общая база. Проверьте интернет и обновите страницу.'; render(); return;
+    }
+    fb.auth.onAuthStateChanged(function (u) {
+      login.checking = false;
+      login.need = !u;
+      if (u) { sync.me = safeGet(NAME_KEY) || ''; startSync(fb.db, 'firebase'); } else stopSync();
+      render();
+    });
+  }
+  async function doLogin() {
+    const pw = document.getElementById('loginPw');
+    const nm = document.getElementById('loginName');
+    if (nm && nm.value.trim()) safeSet(NAME_KEY, nm.value.trim());
+    const em = document.getElementById('loginEmail');
+    const email = FIREBASE.email || (em && em.value.trim()) || '';
+    if (em && email) safeSet(LOGIN_KEY, email);
+    if (!email) { login.err = 'Введите почту.'; render(); return; }
+    if (!fb || !pw || !pw.value) { login.err = 'Введите пароль.'; render(); return; }
+    login.busy = true; login.err = ''; render();
+    try { await fb.auth.signInWithEmailAndPassword(email, pw.value); }
+    catch (e) {
+      const c = (e && e.code) || '';
+      login.err = /wrong-password|invalid-credential|invalid-login|user-not-found|invalid-email/.test(c) ? (FIREBASE.email ? 'Неверный пароль.' : 'Неверная почта или пароль.')
+        : /too-many-requests/.test(c) ? 'Слишком много попыток. Подождите несколько минут.'
+        : /network/.test(c) ? 'Нет интернета.' : 'Не получилось войти: ' + (e && e.message || c);
+    }
+    login.busy = false; render();
+  }
+  async function doLogout() {
+    if (!fb) return;
+    await fb.auth.signOut();
+    // На чужом телефоне после выхода ничего не остаётся.
+    try { [KEY, BOOK_KEY, MARKS_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    day = exampleDay(); book = {}; marks = {};
+  }
+  function loginHtml() {
+    if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
+    return '<section><div class="card"><h2>Вход</h2>' +
+      '<div class="muted">Список общий для бригады. Введите пароль, который знают только свои.</div>' +
+      (FIREBASE.email ? '' : '<label>Почта<input type="email" id="loginEmail" value="' + esc(safeGet(LOGIN_KEY) || '') + '" autocomplete="username"></label>') +
+      '<label>Пароль<input type="password" id="loginPw" autocomplete="current-password"></label>' +
+      '<label>Ваше имя (видно второму, кто правил последним)<input id="loginName" value="' + esc(safeGet(NAME_KEY) || '') + '" autocomplete="off"></label>' +
+      (login.err ? '<div class="note">' + esc(login.err) + '</div>' : '') +
+      '<div class="row"><button class="btn primary" data-act="login"' + (login.busy ? ' disabled' : '') + '>' + (login.busy ? 'Вхожу…' : 'Войти') + '</button></div>' +
+      '</div></section>';
+  }
+
+  function onRemoteDay(snap) {
+    if (!snap.exists) {
+      sync.missing = true;
+      // Общего дня ещё нет: первый, кто начнёт свой день, его создаст.
+      if (!day.example) queueSync();
+      rerender();
+      return;
+    }
+    sync.missing = false;
+    const d = snap.data();
+    sync.by = d.by || null; sync.at = d.at || 0;
+    resolveName();
+    if (d.rev === sync.rev) { rerender(); return; } // моя же запись или уже учтено
+    const remote = migrate(JSON.parse(JSON.stringify(d.day || {})));
+    const mine = plainDay();
+    const changed = sync.base && !day.example ? JSON.stringify(mine) !== JSON.stringify(sync.base) : false;
+    day = changed ? migrate(C.mergeDay(sync.base, mine, remote)) : remote;
+    sync.base = JSON.parse(JSON.stringify(remote));
+    sync.rev = d.rev;
+    safeSet(KEY, JSON.stringify(day));
+    if (changed) queueSync();
+    rerender();
+  }
+
+  function onRemoteBook(snap) {
+    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length) queueSync(); return; }
+    const d = snap.data();
+    if (d.rev === sync.bookRev) return;
+    const remote = { book: d.book || {}, marks: d.marks || {} };
+    const base = sync.bookBase || { book: {}, marks: {} };
+    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks) };
+    const changed = JSON.stringify(merged) !== JSON.stringify(remote);
+    book = merged.book; marks = merged.marks;
+    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks));
+    sync.bookBase = JSON.parse(JSON.stringify(remote));
+    sync.bookRev = d.rev;
+    if (changed) queueSync();
+    rerender();
+  }
+
+  async function resolveName() {
+    if (sync.mode === 'firebase') { sync.byName = sync.by && sync.by === sync.me ? 'вы' : (sync.by || ''); return; }
+    if (!sync.by || !sync.user) { sync.byName = ''; return; }
+    if (sync.by === sync.me) { sync.byName = 'вы'; return; }
+    try {
+      const ps = await sync.user.profiles([sync.by]);
+      const n = (ps[sync.by] && ps[sync.by].name) || 'второй человек';
+      if (n !== sync.byName) { sync.byName = n; updateTop(); }
+    } catch (e) { sync.byName = 'второй человек'; }
+  }
+
+  // Запись — не чаще раза в полсекунды, по одной за раз; перед записью подтягиваю свежее, чтобы не затереть чужое.
+  function queueSync() {
+    if (!sync.on || sync.readOnly || day.example) return;
+    clearTimeout(sync.timer);
+    sync.timer = setTimeout(pushSync, 600);
+  }
+  async function pushSync() {
+    if (sync.busy) { sync.again = true; return; }
+    sync.busy = true;
+    try {
+      const snap = await sync.dayRef.get();
+      if (snap.exists && snap.data().rev !== sync.rev) { onRemoteDay(snap); }
+      const payload = plainDay();
+      if (!snap.exists || JSON.stringify(payload) !== JSON.stringify(sync.base)) {
+        const rev = C.uid() + C.uid();
+        sync.rev = rev;
+        await sync.dayRef.set({ day: payload, rev: rev, by: sync.me || '', at: Date.now() });
+        sync.base = payload; sync.missing = false;
+      }
+      const bsnap = await sync.bookRef.get();
+      if (bsnap.exists && bsnap.data().rev !== sync.bookRev) onRemoteBook(bsnap);
+      const bp = bookData();
+      if (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase)) {
+        const rev = C.uid() + C.uid();
+        sync.bookRev = rev;
+        await sync.bookRef.set({ book: bp.book, marks: bp.marks, rev: rev, by: sync.me || '', at: Date.now() });
+        sync.bookBase = bp;
+      }
+      sync.err = '';
+    } catch (e) {
+      if (e && (e.code === 'invalid_argument' || e.code === 'permission-denied')) { sync.readOnly = true; sync.err = 'У вас доступ только на просмотр: правки не попадут в общий день.'; }
+      else if (e && e.code === 'quota_exceeded') sync.err = 'Общая база переполнена: ' + (e.message || '');
+      else sync.err = 'Не получилось сохранить в общий день, попробую ещё раз при следующей правке.';
+      rerender();
+    } finally {
+      sync.busy = false;
+      if (sync.again) { sync.again = false; queueSync(); }
+    }
+    updateTop();
+  }
+
+  function syncLine() {
+    if (!sync.on) return '';
+    if (sync.err) return sync.err;
+    const t = sync.at ? new Date(sync.at) : null;
+    const when = t ? C.pad2(t.getHours()) + ':' + C.pad2(t.getMinutes()) : '';
+    return 'Общий день' + (sync.readOnly ? ' (только просмотр)' : '') + (sync.byName && when ? ' · правка: ' + sync.byName + ', ' + when : '');
+  }
+
+  function syncCard() {
+    if (sync.on && sync.mode === 'firebase') {
+      return '<div class="card"><h2>Общий доступ</h2><div class="muted">Вы вошли. День, телефоны и отметки общие для всех, кто знает пароль. Правки второго человека появляются сами, через пару секунд.</div>' +
+        '<label>Ваше имя (видно второму)<input id="myName" value="' + esc(sync.me || '') + '" autocomplete="off"></label>' +
+        '<div class="row"><button class="btn small" data-act="logout">Выйти</button></div></div>';
+    }
+    if (sync.on) {
+      return '<div class="card"><h2>Общий доступ</h2><div class="muted">' +
+        (sync.readOnly ? 'Вы видите общий день, но менять его не можете. Попросите владельца страницы дать вам доступ «Редактор».'
+          : 'День, телефоны и отметки общие для всех, кому открыта эта страница. Правки второго человека появляются сами, через пару секунд.') +
+        ' Второго человека добавляет владелец страницы: кнопка «Поделиться» вверху страницы, его почта, доступ «Редактор». Входить нужно под своим аккаунтом Claude.</div>' +
+        (sync.missing && day.example ? '<div class="note">Общий день ещё пустой. Нажмите «Начать свой день», и он станет общим.</div>' : '') +
+        '</div>';
+    }
+    return '<div class="card"><h2>Общий доступ</h2><div class="muted">На этом сайте день хранится только в этом браузере. Общий день для двоих работает на странице в Claude. Ещё можно передавать день файлом: «Сохранить день в файл» и «Открыть файл дня» ниже.</div></div>';
+  }
+
   let dlCap = null;
   if (window.claude && window.claude.use) {
     dlCap = window.claude.use('downloads').catch(function () { return null; });
@@ -865,8 +1119,10 @@ details > summary { cursor: pointer; font-weight: 600; }
       save();
     }
   });
+  $main.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'loginPw') doLogin(); });
   $main.addEventListener('change', function (e) {
     const t = e.target;
+    if (t.id === 'myName') { sync.me = t.value.trim(); safeSet(NAME_KEY, sync.me); return; }
     if (t.dataset.pf) {
       const p = person(t.dataset.id);
       if (!p) return;
@@ -960,6 +1216,8 @@ details > summary { cursor: pointer; font-weight: 600; }
       case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; g.fuel = '1000'; day.gazelles.push(g); break; }
       case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
       case 'sortAll': C.sortAll(day, b.dataset.v); break;
+      case 'login': doLogin(); return;
+      case 'logout': await doLogout(); render(); return;
       case 'brigAdd': showBrig = true; render(); return;
       case 'brigDel': showBrig = false; day.brigadier = ''; break;
       case 'theme': setTheme(b.dataset.v); render(); return;
@@ -1065,5 +1323,7 @@ details > summary { cursor: pointer; font-weight: 600; }
   });
 
   render();
+  initSync();
+  initFirebase();
 })();
 </script>

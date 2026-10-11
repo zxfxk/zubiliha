@@ -177,5 +177,41 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.strictEqual(d.people.find((p) => p.id === 'new').gazId, d.people.find((p) => p.stop === 'Художка').gazId);
   }
 
+  // Этап 3: слияние правок двух человек.
+  {
+    const base = C.newDay();
+    const g = base.gazelles[0];
+    base.people = [
+      { id: 'a', surname: 'Алов', initial: 'А', stop: 'Рынок', gazId: g.id, status: 'ok' },
+      { id: 'b', surname: 'Бобров', initial: 'Б', stop: 'Рынок', gazId: g.id, status: 'ok' },
+      { id: 'c', surname: 'Вилов', initial: 'В', stop: 'Рынок', gazId: g.id, status: 'ok' },
+    ];
+    const local = JSON.parse(JSON.stringify(base));
+    const remote = JSON.parse(JSON.stringify(base));
+    local.people[0].status = 'noshow';                        // я отметил «не вышел»
+    local.people.push({ id: 'd', surname: 'Новиков', initial: 'Н', stop: 'Художка', gazId: '', status: 'ok' });
+    local.zp = 'поле: Алова А';
+    remote.people[1].stop = 'Стекляшка';                      // второй поменял остановку
+    remote.people = remote.people.filter((p) => p.id !== 'c'); // и удалил третьего
+    remote.people.push({ id: 'e', surname: 'Ершов', initial: 'Е', stop: 'Рынок', gazId: g.id, status: 'ok' });
+    remote.gazelles[0].number = '777';
+    remote.replaceField = 'Ершов Е';
+    const m = C.mergeDay(base, local, remote);
+    assert.deepStrictEqual(m.people.map((p) => p.id), ['a', 'b', 'e', 'd']);
+    assert.strictEqual(m.people[0].status, 'noshow');
+    assert.strictEqual(m.people[1].stop, 'Стекляшка');
+    assert.strictEqual(m.gazelles[0].number, '777');
+    assert.strictEqual(m.zp, 'поле: Алова А');
+    assert.strictEqual(m.replaceField, 'Ершов Е');
+    // Я отсортировал — мой порядок, а новое от второго в конце.
+    const l2 = JSON.parse(JSON.stringify(base)); l2.people.reverse();
+    const r2 = JSON.parse(JSON.stringify(base)); r2.people.push({ id: 'z', surname: 'Зуев', initial: 'З', status: 'ok' });
+    assert.deepStrictEqual(C.mergeDay(base, l2, r2).people.map((p) => p.id), ['c', 'b', 'a', 'z']);
+    // Без базы берётся чужое целиком.
+    assert.strictEqual(C.mergeDay(null, local, remote).people.length, 3);
+    // Телефоны: удаление у одного и добавление у другого.
+    assert.deepStrictEqual(C.mergeMap({ x: 1, y: 2 }, { x: 1 }, { x: 1, y: 2, z: 3 }), { x: 1, z: 3 });
+  }
+
   console.log('ok');
 })().catch((e) => { console.error(e); process.exit(1); });
