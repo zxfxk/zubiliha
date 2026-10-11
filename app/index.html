@@ -5,12 +5,12 @@
 <style>
 /* Раскладка: одна колонка под палец, липкая шапка со счётчиками, нижняя панель вкладок. */
 :root {
-  --bg: #f3f4ee;
+  --bg: #f4f4f5;
   --surface: #ffffff;
-  --line: #d9dccf;
-  --fg: #1f2419;
-  --muted: #646b58;
-  --accent: #3f6b2a;        /* ботва */
+  --line: #dcdce1;
+  --fg: #1d1d20;
+  --muted: #66666f;
+  --accent: #2f3640;        /* графит */
   --accent-fg: #ffffff;
   --marker: #fff200;        /* жёлтый маркер, как в Word */
   --marker-fg: #1f2419;
@@ -23,14 +23,14 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #15180f; --surface: #1e2217; --line: #343a2a; --fg: #e8ebdf; --muted: #a2aa92;
-    --accent: #8fc46a; --accent-fg: #11160b; --marker: #e6d800; --marker-fg: #15180f;
+    --bg: #131315; --surface: #1d1d20; --line: #34343a; --fg: #ececef; --muted: #a1a1aa;
+    --accent: #e4e4e7; --accent-fg: #18181b; --marker: #e6d800; --marker-fg: #18181b;
     --warn: #f0b85a; --warn-bg: #3a2d12; --danger: #ff8a80; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #15180f; --surface: #1e2217; --line: #343a2a; --fg: #e8ebdf; --muted: #a2aa92;
-  --accent: #8fc46a; --accent-fg: #11160b; --marker: #e6d800; --marker-fg: #15180f;
+  --bg: #131315; --surface: #1d1d20; --line: #34343a; --fg: #ececef; --muted: #a1a1aa;
+  --accent: #e4e4e7; --accent-fg: #18181b; --marker: #e6d800; --marker-fg: #18181b;
   --warn: #f0b85a; --warn-bg: #3a2d12; --danger: #ff8a80; color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -158,6 +158,18 @@ details > summary { cursor: pointer; font-weight: 600; }
   let parseReport = null;
   let assignReport = null;
   let pendingConfirm = null;
+  let showBrig = false;
+
+  // Тема: как в системе, светлая или тёмная (запоминается в этом браузере).
+  const THEME_KEY = 'zubilikha_theme';
+  let theme = safeGet(THEME_KEY) || 'auto';
+  function setTheme(v) {
+    theme = v;
+    safeSet(THEME_KEY, v);
+    if (v === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', v);
+  }
+  setTheme(theme);
 
   function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function safeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* хранилище недоступно */ } }
@@ -245,13 +257,13 @@ details > summary { cursor: pointer; font-weight: 600; }
   function exampleDay() {
     const d = C.newDay();
     d.example = true;
-    d.brigadier = 'Петров';
     const spec = [['457', 'Д', 19], ['601', 'М', 18], ['685', '', 5]];
     d.gazelles.forEach(function (g, i) { g.number = spec[i][0]; g.letter = spec[i][1]; g.capacity = spec[i][2]; });
     d.gazelles[1].kind = 'Цех/поле';
     d.gazelles[1].payShop = '3000';
     d.gazelles[2].vehicle = 'машина';
     d.gazelles[2].carName = 'тойота королла';
+    d.gazelles[2].fuel = '1000';
     const names = ['Абрамов А', 'Белова Б', 'Воронин В', 'Гаврилова Г', 'Данилов Д', 'Ефимова Е', 'Жуков Ж', 'Зайцева З', 'Ильин И', 'Ковалева К',
       'Лаптев Л', 'Миронова М', 'Носков Н', 'Орлова О', 'Панов П', 'Рябова Р', 'Соколов С', 'Титова Т', 'Уткин У', 'Фомина Ф', 'Хохлов Х', 'Цветкова Ц'];
     const stops = ['Леспромхоз', 'Пурех 5ка', 'Рынок', '3шк', 'Художка', 'Стекляшка', 'Фрунзе/Пионерская', 'Шалдеж'];
@@ -297,7 +309,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     const cap = day.gazelles.reduce(function (s, g) { return s + (+g.capacity || 0); }, 0);
     const noshow = day.people.filter(function (p) { return p.status === 'noshow'; }).length;
     document.getElementById('subtitle').textContent =
-      'Бригадир: ' + (day.brigadier || '—') + ' · в газелях ' + placed + ' из ' + cap + ' мест' +
+      (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' +
       (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
       (noshow ? ' · не вышли ' + noshow : '');
   }
@@ -334,9 +346,16 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<div class="card"><h2>День</h2>' +
       '<div class="grid2">' +
       '<label>Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '"></label>' +
-      field('Бригадир', 'brigadier', day.brigadier, 'autocomplete="off"') +
-      '</div>' + '<div class="grid2">' + field('Место (для имени файла)', 'place', day.place) +
-      field('Нам за человека, ₽', 'rate', day.rate, 'inputmode="numeric"') + '</div>' +
+      field('Место (для имени файла)', 'place', day.place) +
+      '</div>' + '<div class="grid2">' + field('Нам за человека, ₽', 'rate', day.rate, 'inputmode="numeric"') + '</div>' +
+      (showBrig || String(day.brigadier || '').trim()
+        ? '<div class="row"><label class="grow">Бригадир (в Excel и именах файлов)<input data-path="brigadier" value="' + esc(day.brigadier) + '" autocomplete="off"></label>' +
+          '<button class="btn small" data-act="brigDel" style="align-self:end">Убрать</button></div>'
+        : '<div class="row"><button class="btn small" data-act="brigAdd">Добавить бригадира</button></div>') +
+      '<div class="row"><span class="muted">Тема</span><div class="seg" role="group" aria-label="Тема">' +
+      [['auto', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(function (t) {
+        return '<button data-act="theme" data-v="' + t[0] + '" aria-pressed="' + (theme === t[0]) + '">' + t[1] + '</button>';
+      }).join('') + '</div></div>' +
       '</div>' +
       '<div class="card"><h2>Для всех газелей</h2><div class="muted">В карточке газели можно поменять для неё отдельно.</div>' +
       '<div class="grid3">' +
@@ -349,12 +368,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       '<div class="grid2">' + field('Вид работы', 'defaults.work', d.work) + field('Вид работы цех', 'defaults.workShop', d.workShop, 'placeholder="как поле"') + '</div>' +
       field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
       '</div>' +
-      '<div class="card"><h2>Низ таблицы</h2>' +
-      '<div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div>' +
-      field('ЗП прошу получить/выдать –', 'zp', day.zp) +
-      '<label>Добавить к ЗП человека<select data-act="zpAdd"><option value="">выбрать…</option>' + peopleOptions(null) + '</select></label>' +
-      field('Приписка (курсивом)', 'footer', day.footer) +
-      '</div>' +
+
       '<div class="card"><h2>Файл дня</h2>' +
       '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
       '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
@@ -394,6 +408,11 @@ details > summary { cursor: pointer; font-weight: 600; }
           : '<button class="btn small" data-act="useSnap">Как в прошлый раз</button>') +
         '</div></div>';
     }
+    if (day.people.some(function (p) { return p.gazId && p.status !== 'refused'; })) {
+      h += '<div class="card"><div class="muted">Порядок людей в Word (во всех газелях)</div><div class="row">' +
+        '<button class="btn small" data-act="sortAll" data-v="name">По фамилиям</button>' +
+        '<button class="btn small" data-act="sortAll" data-v="stop">По остановкам</button></div></div>';
+    }
     day.gazelles.forEach(function (g, i) {
       const n = C.peopleOf(day, g).length;
       const over = n > (+g.capacity || 0);
@@ -426,14 +445,21 @@ details > summary { cursor: pointer; font-weight: 600; }
         field('Напоминание', pre + 'reminder', g.reminder, 'placeholder="' + esc(d.reminder) + '"') +
         '<div class="muted">Пустое поле = как для всех газелей.</div>' +
         '</details>' +
-        field('По остановкам прошу отписаться –', pre + 'contact', g.contact) +
-        '<label>Выбрать из этой газели<select data-act="gContact" data-i="' + i + '"><option value="">выбрать…</option>' + peopleOptions(g) + '</select></label>' +
+        (g.vehicle === 'машина'
+          ? '<div class="grid2">' + field('Бензин водителю, ₽', pre + 'fuel', g.fuel, 'inputmode="numeric" placeholder="1000"') +
+            '<div class="muted" style="align-self:end">Добавится водителю в Excel.</div></div>'
+          : field('По остановкам прошу отписаться –', pre + 'contact', g.contact) +
+            '<label>Выбрать из этой газели<select data-act="gContact" data-i="' + i + '"><option value="">выбрать…</option>' + peopleOptions(g) + '</select></label>') +
         (pendingConfirm === 'gDel' + i
           ? '<div class="note">Люди из этой газели перейдут в «Без газели».</div><div class="confirm"><button class="btn danger" data-act="gDel" data-i="' + i + '" data-yes="1">Удалить газель</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
           : '<div class="row"><button class="btn danger small" data-act="gDel" data-i="' + i + '">Удалить газель</button></div>') +
         '</div>';
     });
-    h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button><button class="btn" data-act="gAddCar">Добавить машину</button></div></section>';
+    h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button><button class="btn" data-act="gAddCar">Добавить машину</button></div>';
+    h += '<div class="card"><h2>Низ таблицы</h2>' +
+      field('ЗП поле/цех прошу получить/выдать –', 'zp', day.zp) +
+      field('Приписка (курсивом)', 'footer', day.footer) +
+      '</div></section>';
     return h;
   }
 
@@ -489,6 +515,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       h += '<div class="card"><details><summary>Отказались (' + refused.length + ')</summary><div style="display:grid;gap:10px;margin-top:10px">' +
         refused.map(function (p, i) { return personRow(p, i + 1); }).join('') + '</div></details></div>';
     }
+    h += '<div class="card"><h2>Замена</h2><div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div></div>';
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
   }
@@ -710,7 +737,7 @@ details > summary { cursor: pointer; font-weight: 600; }
       h += '</tr>';
     }
     h += '<tr><td></td>' + gs.map(function (g) {
-      return '<td style="font-size:10px">По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br><b>Остановки:</b><br>' +
+      return '<td style="font-size:10px">' + (g.vehicle === 'машина' ? '' : 'По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br>') + '<b>Остановки:</b><br>' +
         C.stopSummary(day, g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join('<br>') + '</td>';
     }).join('') + '</tr>';
     h += '<tr><td colspan="' + (gs.length + 1) + '" style="text-align:center"><div class="red">Замена поле: ' + esc(day.replaceField || '-') + '</div>' +
@@ -802,10 +829,6 @@ details > summary { cursor: pointer; font-weight: 600; }
       day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
     }
     else if (act === 'gContact' && t.value) { day.gazelles[+t.dataset.i].contact = C.accusative(C.personLabel(person(t.value))); }
-    else if (act === 'zpAdd' && t.value) {
-      const n = C.accusative(C.personLabel(person(t.value)));
-      day.zp = String(day.zp || '').trim() ? day.zp.trim() + ' / ' + n : 'поле: ' + n;
-    }
     else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); return; }
     else return;
     save(); render();
@@ -875,11 +898,16 @@ details > summary { cursor: pointer; font-weight: 600; }
         if ((g.vehicle || 'газель') === b.dataset.v) return;
         g.vehicle = b.dataset.v;
         if (g.vehicle === 'машина' && +g.capacity >= 10) g.capacity = 5;
+        if (g.vehicle === 'машина' && !String(g.fuel || '').trim()) g.fuel = '1000';
         if (g.vehicle === 'газель' && +g.capacity < 10) g.capacity = 19;
         break;
       }
-      case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; day.gazelles.push(g); break; }
+      case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; g.fuel = '1000'; day.gazelles.push(g); break; }
       case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'sortAll': C.sortAll(day, b.dataset.v); break;
+      case 'brigAdd': showBrig = true; render(); return;
+      case 'brigDel': showBrig = false; day.brigadier = ''; break;
+      case 'theme': setTheme(b.dataset.v); render(); return;
       case 'assign': {
         const mode = b.dataset.v;
         const vans = day.gazelles.filter(function (g) { return g.vehicle !== 'машина'; });

@@ -279,8 +279,8 @@
   function uid() { return Math.random().toString(36).slice(2, 10); }
 
   function newGazelle(n) {
-    // kind: Поле | Цех | Цех/поле; vehicle: газель | машина (carName — марка машины).
-    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', workShop: '', reminder: '', contact: '' };
+    // kind: Поле | Цех | Цех/поле; vehicle: газель | машина (carName — марка машины, fuel — бензин водителю, ₽).
+    return { id: uid(), kind: 'Поле', vehicle: 'газель', carName: '', number: '', letter: '', capacity: 19, departure: '', pay: '', payShop: '', start: '', end: '', work: '', workShop: '', reminder: '', contact: '', fuel: '' };
   }
 
   function newDay() {
@@ -354,6 +354,17 @@
     day.people = day.people.map(function (p) { return inGroup(p) ? sorted[k++] : p; });
   }
 
+  // Сортирует людей во всех газелях: by 'name' — по фамилиям, 'stop' — по остановкам (по алфавиту), внутри — по фамилиям.
+  function sortAll(day, by) {
+    const cmp = by === 'stop'
+      ? function (a, b) { return String(a.stop || '').localeCompare(String(b.stop || ''), 'ru', { sensitivity: 'base' }) || byAlpha(a, b); }
+      : byAlpha;
+    const inVan = function (p) { return p.gazId && p.status !== 'refused'; };
+    const sorted = day.people.filter(inVan).sort(cmp);
+    let k = 0;
+    day.people = day.people.map(function (p) { return inVan(p) ? sorted[k++] : p; });
+  }
+
   function vehicleCounts(day) {
     const cars = day.gazelles.filter(function (g) { return g.vehicle === 'машина'; }).length;
     return { gaz: day.gazelles.length - cars, cars: cars };
@@ -388,7 +399,7 @@
   function fileNames(day) {
     const dp = dateParts(day.date) || { y: 0, m: 0, d: 0 };
     const t = day.latinNames ? translit : function (s) { return String(s || '').replace(/[\\/:*?"<>|\s]+/g, ''); };
-    const brig = t(day.brigadier) || (day.latinNames ? 'Brigadir' : 'Бригадир');
+    const brig = t(day.brigadier);
     const place = t(day.place);
     const vc = vehicleCounts(day);
     const went = wentPeople(day).length;
@@ -398,7 +409,7 @@
     if (vc.cars) parts.push(vc.cars + (day.latinNames ? plural(vc.cars, 'mashina', 'mashiny', 'mashin') : plural(vc.cars, 'машина', 'машины', 'машин')));
     const gaz = parts.join('_');
     const word = [pad2(dp.d), pad2(dp.m), gaz, brig, place].filter(Boolean).join('_') + '.docx';
-    const xls = [pad2(dp.d), pad2(dp.m), dp.y, day.latinNames ? 'brigada' : 'бригада', brig, went + (day.latinNames ? 'chel' : 'чел')].join('_') + '.xlsx';
+    const xls = [pad2(dp.d), pad2(dp.m), dp.y, day.latinNames ? 'brigada' : 'бригада', brig, went + (day.latinNames ? 'chel' : 'чел')].filter(Boolean).join('_') + '.xlsx';
     return { word: word, excel: xls };
   }
 
@@ -416,7 +427,11 @@
     });
     const flagged = day.people.filter(function (p) { return p.flags && p.flags.length && p.status !== 'refused'; });
     if (flagged.length) w.push('Проверить: ' + flagged.length + ' чел.');
-    if (!String(day.brigadier).trim()) w.push('Не указан бригадир.');
+    day.gazelles.forEach(function (g, i) {
+      if (g.vehicle === 'машина' && +g.fuel > 0 && !peopleOf(day, g).some(function (p) { return p.driver; })) {
+        w.push('Машина ' + (i + 1) + ': не отмечен водитель, бензин в Excel не попадёт.');
+      }
+    });
     const seen = {};
     day.people.forEach(function (p) {
       if (p.status === 'refused') return;
@@ -602,7 +617,7 @@
     DEFAULT_STOPS: DEFAULT_STOPS, MONTHS_GEN: MONTHS_GEN, MONTHS_NOM: MONTHS_NOM,
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
-    newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
+    newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
     peopleOf: peopleOf, autoAssign: autoAssign, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings,
   };
   root.Core = Core;

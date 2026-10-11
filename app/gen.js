@@ -103,10 +103,10 @@
     // Строка остановок.
     const stopCells = [cell([para([])], numW)].concat(gs.map(function (g) {
       const contact = String(g.contact || '').trim();
-      const ps = [
-        para([run('По остановкам прошу отписаться' + (contact ? ' – ' + contact : ''), { size: 18 })]),
-        para([run('Остановки:', { size: 18, bold: true })]),
-      ];
+      const ps = [];
+      // В машине всего несколько человек — отписываться по остановкам не нужно.
+      if (g.vehicle !== 'машина') ps.push(para([run('По остановкам прошу отписаться' + (contact ? ' – ' + contact : ''), { size: 18 })]));
+      ps.push(para([run('Остановки:', { size: 18, bold: true })]));
       Core.stopSummary(day, g, stops).forEach(function (s) {
         ps.push(para([run(s.stop + ' — ' + s.count, { size: 18 })]));
       });
@@ -186,12 +186,14 @@
     const toItems = function (kind) {
       return Core.wentPeople(day, kind).map(function (x) {
         const own = String(x.p.pay || '').trim();
+        // Водителю машины — компенсация за бензин.
+        const fuel = x.g.vehicle === 'машина' && x.p.driver ? payNum(x.g.fuel) : 0;
         return {
           name: Core.personLabel(x.p),
           work: lowerFirst(Core.workFor(day, x.g, kind)),
           start: Core.gz(day, x.g, 'start'),
           end: Core.gz(day, x.g, 'end'),
-          pay: payNum(own || Core.payFor(day, x.g, kind)),
+          pay: payNum(own || Core.payFor(day, x.g, kind)) + fuel,
         };
       });
     };
@@ -207,10 +209,12 @@
     c1.font = { name: 'Calibri', size: 14, bold: true };
     c1.alignment = { horizontal: 'left' };
     ['C1', 'F1'].forEach(function (a) { ws.getCell(a).fill = white; });
-    ws.getCell('A2').value = 'Бригада ';
-    ws.getCell('A2').font = { name: 'Calibri', size: 12, bold: true };
-    ws.getCell('C2').value = String(day.brigadier || '').trim();
-    ws.getCell('C2').font = { name: 'Calibri', size: 18, bold: true, underline: true };
+    if (String(day.brigadier || '').trim()) {
+      ws.getCell('A2').value = 'Бригада ';
+      ws.getCell('A2').font = { name: 'Calibri', size: 12, bold: true };
+      ws.getCell('C2').value = String(day.brigadier).trim();
+      ws.getCell('C2').font = { name: 'Calibri', size: 18, bold: true, underline: true };
+    }
 
     const block = function (cols, title, titleSize, items) {
       const [cN, cName, cWork, cStart, cEnd, cPay] = cols;
