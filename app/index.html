@@ -102,7 +102,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .phone a { color: var(--accent); text-decoration: none; }
 .more { padding-left: 30px; display: flex; gap: 6px; align-items: center; }
-.more input { flex: 1 1 auto; padding: 7px 8px; font-size: 15px; }
+.more { flex-wrap: wrap; }
+.more input { flex: 1 1 160px; padding: 7px 8px; font-size: 15px; }
+.linkbtn { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; padding: 0 2px; }
+.person .line2 .iconbtn { width: 28px; height: 30px; font-size: 14px; }
+.person .line2 .btn.small { padding: 6px 9px; font-size: 12px; }
+@media (max-width: 480px) { .person .line2 { padding-left: 0; gap: 5px; } .person .line2 .seg button { padding: 7px 7px; } }
 .sublabel { font: 700 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); padding-top: 4px; }
 .iconbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; width: 34px; height: 32px; font-size: 15px; }
 .flag { padding-left: 30px; font-size: 13px; color: var(--warn); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -175,7 +180,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   main.enter section > :nth-child(4) { animation-delay: .12s; }
   main.enter section > :nth-child(n+5) { animation-delay: .16s; }
   .person.flash { animation: flash 1.2s var(--ease); }
-  .person.opened .more { animation: fadein .28s var(--ease) both; }
+  .more .pphone { animation: fadein .28s var(--ease) both; }
   details.opening > :not(summary) { animation: rise .3s var(--ease) both; }
   main.enter .kot { animation: kotIn .5s cubic-bezier(.34, 1.56, .64, 1) .1s both; }
   input, select, textarea { transition: border-color .15s, background-color .15s; }
@@ -239,7 +244,6 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   const openRows = new Set();
   const flashIds = new Set(); // строки, которые только что добавили или переложили: мягко подсвечиваются
   let shownTab = null;
-  let openedNow = null; // строка, у которой только что раскрыли «⋯»
   let parseReport = null;
   let assignReport = null;
   let pendingConfirm = null;
@@ -532,7 +536,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     $main.classList.remove('enter');
     $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
-    flashIds.clear(); openedNow = null;
+    flashIds.clear();
     if (entering) { void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
   }
@@ -815,8 +819,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function personMeta(p) {
     const g = gById(p.gazId);
     const bits = [];
-    if (p.phone && !openRows.has(p.id)) bits.push('☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>');
-    if (isFlaky(p)) bits.push('<span class="badge warnb">часто не выходит</span>');
+    if (p.phone && !openRows.has(p.id)) bits.push('☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>' +
+      ' <button class="linkbtn" data-act="pPhone" data-id="' + p.id + '">изменить</button>');
     return bits.length ? '<div class="phone">' + bits.join(' ') + '</div>' : '';
   }
 
@@ -867,7 +871,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const st = p.status || 'ok';
     const g = gById(p.gazId);
     const inCar = !!g && g.vehicle === 'машина';
-    return '<div class="person ' + st + (flashIds.has(p.id) ? ' flash' : '') + (openedNow === p.id ? ' opened' : '') + '" data-id="' + p.id + '">' +
+    return '<div class="person ' + st + (flashIds.has(p.id) ? ' flash' : '') + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
@@ -879,20 +883,22 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
         return '<button class="st-' + s[0] + '" data-act="pStatus" data-id="' + p.id + '" data-v="' + s[0] + '" aria-pressed="' + (st === s[0]) + '">' + s[1] + '</button>';
       }).join('') + '</div>' +
+      '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
+      '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
       '<span class="spacer"></span>' +
+      (pendingConfirm === 'pDel' + p.id
+        ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
+        : '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button>') +
+      '</div>' +
+      '<div class="more">' +
       // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
       (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
       (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
-      '<button class="iconbtn" data-act="pMore" data-id="' + p.id + '" aria-label="Ещё" aria-expanded="' + openRows.has(p.id) + '">⋯</button>' +
-      '</div>' +
+      '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
       (openRows.has(p.id)
-        ? '<div class="more"><input type="tel" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">' +
-          '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
-          '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
-          '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>' +
-          '<div class="more">' +
-          '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button></div>'
-        : '') +
+        ? '<input type="tel" class="pphone" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off">'
+        : !p.phone ? '<button class="btn small" data-act="pPhone" data-id="' + p.id + '">Добавить телефон</button>' : '') +
+      '</div>' +
       stopHint + flags + '</div>';
   }
 
@@ -1098,7 +1104,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function editing() { const a = document.activeElement; return !!a && $main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
   // Пока человек печатает, чужие правки не перерисовывают поле под пальцем — покажу после.
   function rerender() { if (editing()) renderLater = true; else render(); }
-  $main.addEventListener('focusout', function () {
+  $main.addEventListener('focusout', function (e) {
+    // Открыли «Добавить телефон» и ушли, ничего не введя, — поле снова прячется.
+    if (e.target.classList.contains('pphone') && !e.target.value.trim()) { openRows.delete(e.target.dataset.id); renderLater = true; }
     // Небольшая пауза: если палец уже жмёт кнопку («Разобрать»), сначала сработает она, а не перерисовка.
     setTimeout(function () { if (renderLater && !editing()) render(); }, 350);
   });
@@ -1431,7 +1439,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const p = person(t.dataset.id);
       if (!p) return;
       if (t.dataset.pf === 'name') { Object.assign(p, splitName(t.value)); fillPhone(p); }
-      else if (t.dataset.pf === 'phone') { p.phone = C.formatPhone(t.value); rememberPhone(p); }
+      else if (t.dataset.pf === 'phone') { p.phone = C.formatPhone(t.value); rememberPhone(p); openRows.delete(p.id); }
       else {
         const s = t.value.trim() ? C.findStopByText(t.value, stopsList()) : null;
         p.stop = s ? s.name : t.value.trim();
@@ -1599,7 +1607,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         break;
       }
       case 'pKind': { const p = person(id); p.kind = p.kind === 'цех' ? 'поле' : 'цех'; break; }
-      case 'pMore': if (openRows.has(id)) openRows.delete(id); else { openRows.add(id); openedNow = id; } render(); return;
+      case 'pPhone': {
+        openRows.add(id); render();
+        const inp = $main.querySelector('input.pphone[data-id="' + id + '"]');
+        if (inp) inp.focus();
+        return;
+      }
       case 'gUp': case 'gDown': {
         const j = act === 'gUp' ? i - 1 : i + 1;
         if (j < 0 || j >= day.gazelles.length) return;
@@ -1671,7 +1684,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'pStatus': { const p = person(id); const was = p.status; p.status = b.dataset.v; if ((was === 'refused') !== (p.status === 'refused')) toEnd(p); break; }
       case 'pUp': moveWithin(person(id), -1); break;
       case 'pDown': moveWithin(person(id), 1); break;
-      case 'pDel': keep('перед удалением ' + C.personLabel(person(id))); day.people.splice(day.people.indexOf(person(id)), 1); break;
+      case 'pDel': if (!yes) { pendingConfirm = 'pDel' + id; break; } pendingConfirm = null; keep('перед удалением ' + C.personLabel(person(id))); day.people.splice(day.people.indexOf(person(id)), 1); break;
       case 'pOk': person(id).flags = []; break;
       case 'pStopFix': {
         const p = person(id);
