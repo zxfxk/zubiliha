@@ -119,6 +119,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .total { font-size: 17px; font-variant-numeric: tabular-nums; }
 .fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
 details > summary { cursor: pointer; font-weight: 600; }
+.namerow { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.namerow input { flex: 1; min-width: 0; }
+details.backup { margin-top: 12px; }
+details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted, inherit); }
 .confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .banner { border: 1px dashed var(--accent); border-radius: var(--r); padding: 12px; display: grid; gap: 8px; }
 @media (prefers-reduced-motion: no-preference) { .btn, .seg button { transition: background .15s; } }
@@ -393,17 +397,30 @@ details > summary { cursor: pointer; font-weight: 600; }
       '</div>' +
 
       syncCard() +
-      '<div class="card"><h2>Файл дня</h2>' +
-      '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
-      '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>' +
-      confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
-      '</div>' +
+      dayFileCard() +
       '<div class="card"><details><summary>Справочник остановок</summary>' +
       '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны: по зонам раскладываются газели. Зона, где в названии есть «деревни» или «любую», идёт в любую газель. Порядок строк — порядок маршрута и сводки.</p>' +
       '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
       '<label class="row" style="display:flex"><input type="checkbox" data-path="latinNames" style="width:auto" ' + (day.latinNames ? 'checked' : '') + '> Имена файлов латиницей</label>' +
       '</details></div>' +
       '</section>';
+  }
+
+  // Когда день общий, файл не нужен: остаётся «Новый день» и мелкая резервная копия.
+  function dayFileCard() {
+    const files = '<div class="row"><button class="btn" data-act="exportJson">Сохранить день в файл</button><button class="btn" data-act="importJson">Открыть файл дня</button></div>';
+    if (sync.on) {
+      return '<div class="card"><h2>Новый день</h2>' +
+        confirmBlock('newDay', 'Новый день', 'Список людей очистится у всех, кто вошёл: газели и настройки останутся, дата сдвинется на следующий день.', 'Очистить список') +
+        '<details class="backup"><summary>Резервная копия файлом</summary>' +
+        '<div class="muted">На случай, если общая база не откроется. В файл попадает и телефонная книжка.</div>' + files + '</details>' +
+        '</div>';
+    }
+    return '<div class="card"><h2>Файл дня</h2>' +
+      '<div class="muted">День хранится в этом браузере. Чтобы передать его второму человеку или сохранить копию, сохраните в файл. В файл попадает и телефонная книжка (запомнено номеров: ' + Object.keys(book).length + ').</div>' +
+      files +
+      confirmBlock('newDay', 'Новый день', 'Список людей очистится, газели и настройки останутся. Дата сдвинется на следующий день.', 'Очистить список') +
+      '</div>';
   }
 
   function confirmBlock(act, label, text, yes) {
@@ -1003,9 +1020,8 @@ details > summary { cursor: pointer; font-weight: 600; }
 
   function syncCard() {
     if (sync.on && sync.mode === 'firebase') {
-      return '<div class="card"><h2>Общий доступ</h2><div class="muted">Вы вошли. День, телефоны и отметки общие для всех, кто знает пароль. Правки второго человека появляются сами, через пару секунд.</div>' +
-        '<label>Ваше имя (видно второму)<input id="myName" value="' + esc(sync.me || '') + '" autocomplete="off"></label>' +
-        '<div class="row"><button class="btn small" data-act="logout">Выйти</button></div></div>';
+      return '<div class="card"><h2>Общий доступ</h2><div class="muted">День общий для всех, кто вошёл. Ваше имя видно второму.</div>' +
+        '<div class="namerow"><input id="myName" value="' + esc(sync.me || '') + '" placeholder="Ваше имя" autocomplete="off"><button class="btn small" data-act="logout">Выйти</button></div></div>';
     }
     if (sync.on) {
       return '<div class="card"><h2>Общий доступ</h2><div class="muted">' +
