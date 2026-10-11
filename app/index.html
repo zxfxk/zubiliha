@@ -383,6 +383,67 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function saveIssues() {
     try { localStorage.setItem(ISSUES_KEY, JSON.stringify(issues)); return true; } catch (e) { return false; }
   }
+  function queueIssues() { if (sync.on && !sync.readOnly) { clearTimeout(sync.timer); sync.timer = setTimeout(pushSync, 600); } }
+  function dropIssues(f) {
+    issues.forEach(function (x) { if (f(x) && (x.up || x.imgRemote)) isync.del.push(x.id); });
+    issues = issues.filter(function (x) { return !f(x); });
+    saveIssues(); queueIssues();
+  }
+  // В общей базе: список записей без картинок в shared/issues, каждый скриншот отдельным документом shared/issimg_<id>.
+  const isync = { base: null, rev: null, del: [], loading: {} };
+  function issueMeta(x) { return { at: x.at, text: x.text || '', by: x.by || '', ctx: x.ctx || {}, img: !!(x.img || x.imgRemote) }; }
+  function issueItems() { const m = {}; issues.forEach(function (x) { m[x.id] = issueMeta(x); }); return m; }
+  function onRemoteIssues(snap) {
+    if (!snap.exists) { if (issues.length) queueSync(); return; }
+    const d = snap.data();
+    if (d.rev === isync.rev) return;
+    const remote = d.items || {};
+    const merged = C.mergeMap(isync.base || {}, issueItems(), remote);
+    const old = {}; issues.forEach(function (x) { old[x.id] = x; });
+    issues = Object.keys(merged).map(function (id) {
+      const m = merged[id], x = old[id];
+      return Object.assign({ id: id, img: '', up: true }, x || {}, { at: m.at, text: m.text, by: m.by, ctx: m.ctx, imgRemote: m.img && !(x && x.img) });
+    }).sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+    saveIssues();
+    isync.base = JSON.parse(JSON.stringify(remote));
+    isync.rev = d.rev;
+    if (JSON.stringify(merged) !== JSON.stringify(remote)) queueSync();
+    loadIssueImages();
+    if (tab === 'issues') rerender();
+  }
+  // Скриншоты второго человека подтягиваю по одному и запоминаю, чтобы не читать базу заново.
+  function loadIssueImages() {
+    if (!sync.on || !sync.db) return;
+    issues.forEach(function (x) {
+      if (!x.imgRemote || x.img || isync.loading[x.id]) return;
+      isync.loading[x.id] = true;
+      sync.db.doc('shared/issimg_' + x.id).get().then(function (snap) {
+        const img = snap.exists && snap.data().img;
+        const y = issues.find(function (z) { return z.id === x.id; });
+        if (img && y) { y.img = img; y.imgRemote = false; y.up = true; saveIssues(); if (tab === 'issues') rerender(); }
+      }).catch(function () { /* попробую при следующем обновлении */ }).then(function () { delete isync.loading[x.id]; });
+    });
+  }
+  async function pushIssues() {
+    while (isync.del.length) {
+      const id = isync.del[0];
+      const ref = sync.db.doc('shared/issimg_' + id);
+      await (ref.delete ? ref.delete() : ref.set({ img: '' }));
+      isync.del.shift();
+    }
+    for (const x of issues) {
+      if (x.img && !x.up) { await sync.db.doc('shared/issimg_' + x.id).set({ img: x.img, at: Date.now() }); x.up = true; saveIssues(); }
+    }
+    const snap = await sync.issuesRef.get();
+    if (snap.exists && snap.data().rev !== isync.rev) onRemoteIssues(snap);
+    const items = issueItems();
+    if ((!snap.exists && issues.length) || (snap.exists && JSON.stringify(items) !== JSON.stringify(isync.base))) {
+      const rev = C.uid() + C.uid();
+      isync.rev = rev;
+      await sync.issuesRef.set({ items: items, rev: rev, by: sync.me || '', at: Date.now() });
+      isync.base = items;
+    }
+  }
 
   function exampleDay() {
     const d = C.newDay();
@@ -842,7 +903,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
   function renderIssues() {
     let h = '<section><div class="card"><h2>Что не так</h2>' +
-      '<div class="muted">Записывайте сюда всё, что неудобно или сломалось, можно со скриншотом. Записи копятся. Когда наберётся, скачайте их одним файлом и пришлите мне, я починю всё разом.</div>' +
+      '<div class="muted">Записывайте сюда всё, что неудобно или сломалось, можно со скриншотом. Записи копятся' + (sync.on ? ' и видны обоим' : '') + '. Когда наберётся, скачайте их одним файлом и пришлите мне, я починю всё разом.</div>' +
       '<textarea id="issueText" placeholder="Например: на вкладке Люди уехала кнопка Отказ">' + esc(issueDraft.text) + '</textarea>' +
       (issueDraft.img ? '<div class="shot"><img src="' + issueDraft.img + '" alt="Скриншот"></div>' : '') +
       '<div class="row">' +
@@ -855,9 +916,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (issues.length) {
       h += '<div class="card"><div class="ghead"><h2>Записи</h2><span class="count">' + issues.length + '</span></div>' +
         issues.slice().reverse().map(function (x) {
-          return '<div class="issue"><div class="muted">' + esc(fmtAt(x.at)) + ' · ' + esc(TAB_NAMES[x.ctx && x.ctx.tab] || '') + '</div>' +
+          return '<div class="issue"><div class="muted">' + esc(fmtAt(x.at)) + (x.by ? ' · ' + esc(x.by) : '') + ' · ' + esc(TAB_NAMES[x.ctx && x.ctx.tab] || '') + '</div>' +
             (x.text ? '<div>' + esc(x.text).replace(/\n/g, '<br>') + '</div>' : '') +
-            (x.img ? '<img src="' + x.img + '" alt="Скриншот">' : '') +
+            (x.img ? '<img src="' + x.img + '" alt="Скриншот">' : x.imgRemote ? '<div class="muted">Скриншот загружается…</div>' : '') +
             '<div class="row"><button class="btn small danger" data-act="issueDel" data-id="' + x.id + '">Удалить</button></div></div>';
         }).join('') +
         '<div class="row"><button class="btn primary" data-act="issuesExport">Скачать все записи</button></div>' +
@@ -871,7 +932,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function issuesReport() {
     const rows = issues.map(function (x, i) {
       const c = x.ctx || {};
-      return '<section><h2>' + (i + 1) + '. ' + esc(fmtAt(x.at)) + ' · ' + esc(TAB_NAMES[c.tab] || '') + '</h2>' +
+      return '<section><h2>' + (i + 1) + '. ' + esc(fmtAt(x.at)) + (x.by ? ' · ' + esc(x.by) : '') + ' · ' + esc(TAB_NAMES[c.tab] || '') + '</h2>' +
         (x.text ? '<p>' + esc(x.text).replace(/\n/g, '<br>') + '</p>' : '') +
         (x.img ? '<img src="' + x.img + '" alt="">' : '') +
         '<p class="ctx">Экран ' + esc(c.w) + '×' + esc(c.h) + ' · день ' + esc(c.date) + ' · ' + esc(c.ua) + '</p></section>';
@@ -887,12 +948,18 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = function () {
-        const k = Math.min(1, 1100 / Math.max(img.width, img.height));
-        const cv = document.createElement('canvas');
-        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        // Не больше ~150 КБ: столько спокойно влезает в общую базу.
+        let out = '';
+        [[1100, .72], [900, .65], [750, .6], [600, .55], [480, .5]].some(function (v) {
+          const k = Math.min(1, v[0] / Math.max(img.width, img.height));
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          out = cv.toDataURL('image/jpeg', v[1]);
+          return out.length < 200000;
+        });
         URL.revokeObjectURL(url);
-        resolve(cv.toDataURL('image/jpeg', 0.72));
+        resolve(out);
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('не картинка')); };
       img.src = url;
@@ -1050,12 +1117,13 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     sync.on = true; sync.mode = mode; sync.err = '';
     sync.dayRef = db.doc('shared/day');
     sync.bookRef = db.doc('shared/book');
-    sync.unsub = [sync.dayRef.onSnapshot(onRemoteDay, onSyncError), sync.bookRef.onSnapshot(onRemoteBook, onSyncError)];
+    sync.issuesRef = db.doc('shared/issues'); sync.db = db;
+    sync.unsub = [sync.dayRef.onSnapshot(onRemoteDay, onSyncError), sync.bookRef.onSnapshot(onRemoteBook, onSyncError), sync.issuesRef.onSnapshot(onRemoteIssues, onSyncError)];
     rerender();
   }
   function stopSync() {
     (sync.unsub || []).forEach(function (f) { try { f(); } catch (e) { /* уже отписано */ } });
-    sync.unsub = []; sync.on = false; sync.base = null; sync.rev = null; sync.bookBase = null; sync.bookRev = null;
+    sync.unsub = []; sync.on = false; sync.base = null; sync.rev = null; sync.bookBase = null; sync.bookRev = null; isync.base = null; isync.rev = null;
     clearTimeout(sync.timer);
   }
   function onSyncError(e) {
@@ -1116,8 +1184,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!fb) return;
     await fb.auth.signOut();
     // На чужом телефоне после выхода ничего не остаётся.
-    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY, TALLY_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
-    day = exampleDay(); book = {}; marks = {}; tally = {};
+    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY, TALLY_KEY, ISSUES_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    day = exampleDay(); book = {}; marks = {}; tally = {}; issues = [];
   }
   function loginHtml() {
     if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
@@ -1197,7 +1265,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const snap = await sync.dayRef.get();
       if (snap.exists && snap.data().rev !== sync.rev) { onRemoteDay(snap); }
       const payload = plainDay();
-      if (!snap.exists || JSON.stringify(payload) !== JSON.stringify(sync.base)) {
+      if (!day.example && (!snap.exists || JSON.stringify(payload) !== JSON.stringify(sync.base))) {
         const rev = C.uid() + C.uid();
         sync.rev = rev;
         await sync.dayRef.set({ day: payload, rev: rev, by: sync.me || '', at: Date.now() });
@@ -1206,12 +1274,13 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const bsnap = await sync.bookRef.get();
       if (bsnap.exists && bsnap.data().rev !== sync.bookRev) onRemoteBook(bsnap);
       const bp = bookData();
-      if (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase)) {
+      if (!day.example && (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase))) {
         const rev = C.uid() + C.uid();
         sync.bookRev = rev;
         await sync.bookRef.set({ book: bp.book, marks: bp.marks, tally: bp.tally, rev: rev, by: sync.me || '', at: Date.now() });
         sync.bookBase = bp;
       }
+      await pushIssues();
       sync.err = '';
     } catch (e) {
       if (e && (e.code === 'invalid_argument' || e.code === 'permission-denied')) { sync.readOnly = true; sync.err = 'У вас доступ только на просмотр: правки не попадут в общий день.'; }
@@ -1220,7 +1289,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       rerender();
     } finally {
       sync.busy = false;
-      if (sync.again) { sync.again = false; queueSync(); }
+      if (sync.again) { sync.again = false; queueIssues(); }
     }
     updateTop();
   }
@@ -1418,16 +1487,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         const ta = document.getElementById('issueText');
         issueDraft.text = ta ? ta.value : issueDraft.text;
         if (!issueDraft.text.trim() && !issueDraft.img) { issueMsg = 'Напишите, что не так, или приложите скриншот.'; render(); return; }
-        issues.push({ id: C.uid(), at: new Date().toISOString(), text: issueDraft.text.trim(), img: issueDraft.img,
+        issues.push({ id: C.uid(), at: new Date().toISOString(), text: issueDraft.text.trim(), img: issueDraft.img, by: sync.mode === 'firebase' ? (sync.me || '') : '', up: false,
           ctx: { tab: lastTab, w: window.innerWidth, h: window.innerHeight, date: day.date, ua: navigator.userAgent } });
-        if (saveIssues()) { issueDraft = { text: '', img: '' }; issueMsg = 'Записал. Всего записей: ' + issues.length + '.'; }
+        if (saveIssues()) { issueDraft = { text: '', img: '' }; issueMsg = 'Записал. Всего записей: ' + issues.length + '.'; queueIssues(); }
         else { issues.pop(); issueMsg = 'Не хватило места в памяти браузера. Скачайте записи файлом и очистите список.'; }
         render(); return;
       }
-      case 'issueDel': issues = issues.filter(function (x) { return x.id !== id; }); saveIssues(); render(); return;
+      case 'issueDel': dropIssues(function (x) { return x.id === id; }); render(); return;
       case 'issuesClear':
         if (!yes) { pendingConfirm = 'issuesClear'; render(); return; }
-        pendingConfirm = null; issues = []; saveIssues(); issueMsg = ''; render(); return;
+        pendingConfirm = null; dropIssues(function () { return true; }); issueMsg = ''; render(); return;
       case 'issuesExport': {
         await offer('chto_ne_tak_' + new Date().toISOString().slice(0, 10) + '.html', new Blob([issuesReport()], { type: 'text/html' }));
         return;
