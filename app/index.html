@@ -113,6 +113,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .preview .h { font-weight: 700; }
 .preview .red { color: #f00; font-weight: 700; }
 .preview mark { background: #ff0; color: #000; }
+.shotsrc table { border-collapse: separate; border-spacing: 0; border-top: 1px solid #000; border-left: 1px solid #000; }
+.shotsrc td { border-width: 0 1px 1px 0; }
 .preview .date { text-align: center; font: 13px Calibri, Arial, sans-serif; padding: 4px; }
 .total { font-size: 17px; font-variant-numeric: tabular-nums; }
 .fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
@@ -141,6 +143,7 @@ details > summary { cursor: pointer; font-weight: 600; }
 
 <script src="vendor/docx.js"></script>
 <script src="vendor/exceljs.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
 <script src="core.js"></script>
 <script src="gen.js"></script>
 <script>
@@ -180,6 +183,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     const base = C.newDay();
     d = Object.assign({}, base, d);
     d.defaults = Object.assign({}, base.defaults, d.defaults || {});
+    if (!d.namesV2) { d.latinNames = false; d.namesV2 = true; } // раньше по умолчанию была латиница
     d.gazelles = (d.gazelles || []).map(function (g) { return Object.assign(C.newGazelle(), g); });
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
     return d;
@@ -408,11 +412,7 @@ details > summary { cursor: pointer; font-weight: 600; }
           : '<button class="btn small" data-act="useSnap">Как в прошлый раз</button>') +
         '</div></div>';
     }
-    if (day.people.some(function (p) { return p.gazId && p.status !== 'refused'; })) {
-      h += '<div class="card"><div class="muted">Порядок людей в Word (во всех газелях)</div><div class="row">' +
-        '<button class="btn small" data-act="sortAll" data-v="name">По фамилиям</button>' +
-        '<button class="btn small" data-act="sortAll" data-v="stop">По остановкам</button></div></div>';
-    }
+    h += sortCard();
     day.gazelles.forEach(function (g, i) {
       const n = C.peopleOf(day, g).length;
       const over = n > (+g.capacity || 0);
@@ -479,6 +479,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
 
     if (day.people.some(function (p) { return p.status !== 'refused'; })) h += assignCard(none.length);
+    h += sortCard();
 
     if (none.length || !day.people.length) {
       h += '<div class="card"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
@@ -518,6 +519,14 @@ details > summary { cursor: pointer; font-weight: 600; }
     h += '<div class="card"><h2>Замена</h2><div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div></div>';
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
+  }
+
+  // Порядок людей во всех газелях сразу (так же выйдет в Word).
+  function sortCard() {
+    if (!day.people.some(function (p) { return p.gazId && p.status !== 'refused'; })) return '';
+    return '<div class="card"><div class="muted">Порядок людей в Word, во всех газелях</div><div class="row">' +
+      '<button class="btn small" data-act="sortAll" data-v="name">Сортировать по фамилиям</button>' +
+      '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div></div>';
   }
 
   // Карточка автораспределения по зонам из справочника остановок.
@@ -562,7 +571,6 @@ details > summary { cursor: pointer; font-weight: 600; }
     const g = gById(p.gazId);
     const bits = [];
     if (p.phone && !openRows.has(p.id)) bits.push('☎ <a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>');
-    if (p.driver && g && g.vehicle === 'машина') bits.push('<span class="badge">водитель</span>');
     if (isFlaky(p)) bits.push('<span class="badge warnb">часто не выходит</span>');
     return bits.length ? '<div class="phone">' + bits.join(' ') + '</div>' : '';
   }
@@ -573,6 +581,8 @@ details > summary { cursor: pointer; font-weight: 600; }
         ' <button class="btn small" data-act="pOk" data-id="' + p.id + '">Всё верно</button></div>'
       : '';
     const st = p.status || 'ok';
+    const g = gById(p.gazId);
+    const inCar = !!g && g.vehicle === 'машина';
     return '<div class="person ' + st + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
@@ -586,7 +596,9 @@ details > summary { cursor: pointer; font-weight: 600; }
         return '<button class="st-' + s[0] + '" data-act="pStatus" data-id="' + p.id + '" data-v="' + s[0] + '" aria-pressed="' + (st === s[0]) + '">' + s[1] + '</button>';
       }).join('') + '</div>' +
       '<span class="spacer"></span>' +
-      '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' +
+      // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
+      (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
+      (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
       '<button class="iconbtn" data-act="pMore" data-id="' + p.id + '" aria-label="Ещё" aria-expanded="' + openRows.has(p.id) + '">⋯</button>' +
       '</div>' +
       (openRows.has(p.id)
@@ -595,8 +607,6 @@ details > summary { cursor: pointer; font-weight: 600; }
           '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
           '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button></div>' +
           '<div class="more">' +
-          (gById(p.gazId) && gById(p.gazId).vehicle === 'машина'
-            ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
           '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button></div>'
         : '') +
       flags + '</div>';
@@ -696,7 +706,10 @@ details > summary { cursor: pointer; font-weight: 600; }
     return '<section>' +
       (w.length ? '<div class="note">' + w.map(esc).join('<br>') + '</div>' : '') +
       '<div class="card"><h2>Word для чатов</h2><div class="fname">' + esc(names.word) + '</div>' +
-      '<div class="row"><button class="btn primary" data-act="dlWord">Скачать Word</button></div>' +
+      '<div class="row"><button class="btn primary" data-act="dlWord">Скачать Word</button>' +
+      '<button class="btn" data-act="shotCopy">Скопировать картинкой</button>' +
+      (canShareFiles() ? '<button class="btn" data-act="shotShare">Отправить картинкой</button>' : '<button class="btn" data-act="shotSave">Сохранить картинку</button>') +
+      '</div><div id="shotMsg" class="muted" role="status"></div>' +
       '<div class="preview">' + previewHtml() + '</div></div>' +
       '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
       '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
@@ -715,7 +728,7 @@ details > summary { cursor: pointer; font-weight: 600; }
     let h = '<div class="date">' + esc(dateTitle()) + '</div><table><tr><td>№</td>';
     gs.forEach(function (g, i) {
       const hours = C.hh(C.gz(day, g, 'start')) + '-' + C.hh(C.gz(day, g, 'end')) + ' р.д.';
-      h += '<td><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '') + ' (' + (+g.capacity || 0) + 'м)</div>' +
+      h += '<td><div class="h">' + (i + 1) + '. ' + esc(g.kind) + ', ' + (g.vehicle === 'машина' ? esc((String(g.carName || '').trim() || 'машина') + ' ' + String(g.number || '').trim()) : 'газель №' + esc(g.number) + (g.letter ? ' ' + esc(g.letter) : '')) + ' (' + (+g.capacity || 0) + 'м)</div>' +
         '<div class="red">выезд в ' + esc(C.gz(day, g, 'departure')) + '.</div>' +
         '<div class="h">Оплата ' + esc(window.Gen.payText(day, g)) + '. ' + hours + ' ' + esc(window.Gen.workText(day, g)) + '</div>' +
         '<div class="red">' + esc(C.gz(day, g, 'reminder')) + '</div></td>';
@@ -728,7 +741,11 @@ details > summary { cursor: pointer; font-weight: 600; }
         let c = '';
         if (r <= list.length) {
           const p = list[r - 1];
-          const t = esc([C.personLabel(p), p.stop].filter(Boolean).join(' '));
+          let t = esc([C.personLabel(p), p.stop].filter(Boolean).join(' '));
+          if (g.kind === 'Цех/поле') {
+            const k = C.kindOf(g, p), prev = list[r - 2];
+            if (!prev || C.kindOf(g, prev) !== k) t = (k === 'Цех' ? 'ЦЕХ: ' : 'Поле: ') + t;
+          }
           c = p.status === 'noshow' ? '<mark>' + t + '</mark>' : t;
         } else if (r <= cap) c = '<mark>СВОБОДНОЕ МЕСТО</mark>';
         else if (r === Math.max(cap, list.length) + 1) c = '<i>' + esc(window.Gen.places(cap)) + '</i>';
@@ -771,6 +788,44 @@ details > summary { cursor: pointer; font-weight: 600; }
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
     say('Готово: ' + filename);
   }
+  // Картинка таблицы для чатов: та же таблица, что в предпросмотре, целиком, без прокрутки.
+  function tableImage() {
+    const holder = document.createElement('div');
+    const w = Math.max(720, 60 + 250 * day.gazelles.length);
+    holder.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + w + 'px;background:#fff;padding:10px';
+    holder.innerHTML = '<div class="preview shotsrc" style="overflow:visible;border:0">' + previewHtml() + '</div>';
+    document.body.appendChild(holder);
+    return window.html2canvas(holder, { backgroundColor: '#ffffff', scale: 2, logging: false })
+      .then(function (canvas) { return new Promise(function (res) { canvas.toBlob(res, 'image/png'); }); })
+      .finally(function () { holder.remove(); });
+  }
+  function shotName() { return C.fileNames(day).word.replace(/\.docx$/, '.png'); }
+  function shotSay(t) { const m = document.getElementById('shotMsg'); if (m) m.textContent = t; }
+  function canShareFiles() {
+    try { return !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] })); } catch (e) { return false; }
+  }
+  // Копирование: ClipboardItem создаётся сразу по нажатию (так требует Safari), картинка дорисовывается следом.
+  function copyShot() {
+    const blob = tableImage();
+    let p;
+    try {
+      if (!navigator.clipboard || !window.ClipboardItem) throw new Error('нет буфера');
+      p = navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    } catch (e) { p = Promise.reject(e); }
+    shotSay('Делаю картинку…');
+    return p.then(function () { shotSay('Картинка скопирована. Вставьте её в чат.'); })
+      .catch(function () {
+        shotSay('Этот браузер не дал скопировать картинку, сохраняю файлом.');
+        return blob.then(function (b) { return offer(shotName(), b); }).then(function () { shotSay('Скопировать не вышло, картинка сохранена файлом: ' + shotName()); });
+      });
+  }
+  async function shareShot() {
+    shotSay('Делаю картинку…');
+    const b = await tableImage();
+    try { await navigator.share({ files: [new File([b], shotName(), { type: 'image/png' })] }); shotSay(''); }
+    catch (e) { if (!e || e.name !== 'AbortError') { await offer(shotName(), b); shotSay('Картинка сохранена файлом.'); } else shotSay(''); }
+  }
+
   async function downloadWord() {
     const doc = window.Gen.buildWord(day, window.docx);
     const blob = await window.docx.Packer.toBlob(doc);
@@ -969,6 +1024,15 @@ details > summary { cursor: pointer; font-weight: 600; }
       case 'pDown': moveWithin(person(id), 1); break;
       case 'pDel': day.people.splice(day.people.indexOf(person(id)), 1); break;
       case 'pOk': person(id).flags = []; break;
+      case 'shotCopy':
+        b.disabled = true;
+        copyShot().catch(function (err) { shotSay('Не получилось: ' + err.message); }).finally(function () { b.disabled = false; });
+        return;
+      case 'shotShare': case 'shotSave':
+        try { b.disabled = true; if (act === 'shotShare') await shareShot(); else { shotSay('Делаю картинку…'); await offer(shotName(), await tableImage()); shotSay(''); } }
+        catch (err) { shotSay('Не получилось: ' + err.message); }
+        finally { b.disabled = false; }
+        return;
       case 'dlWord': case 'dlExcel':
         try { b.disabled = true; await (act === 'dlWord' ? downloadWord() : downloadExcel()); }
         catch (err) { const m = document.getElementById('dlMsg'); if (m) m.textContent = 'Ошибка при сборке файла: ' + err.message; }

@@ -61,10 +61,11 @@ let k = 0;
 });
 day.people.push({ id: 'x', surname: 'Отказов', initial: 'О', stop: 'Рынок', gazId: day.gazelles[0].id, status: 'refused', flags: [] });
 
-assert.deepStrictEqual(C.fileNames(day), {
-  word: '12_10_3gazeli_Testov_Zubilikha.docx',
-  excel: '12_10_2026_brigada_Testov_37chel.xlsx',
-});
+// В Word все 41 человек в газелях (без отказа), в Excel — 37 вышедших.
+day.latinNames = true;
+assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41chel_Zubilikha.docx', excel: '12_10_37chel_Zubilikha.xlsx' });
+day.latinNames = false;
+assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилиха.docx', excel: '12_10_37чел_Зубилиха.xlsx' });
 
 (async () => {
   const buf = await D.Packer.toBuffer(Gen.buildWord(day, D));
@@ -90,7 +91,6 @@ assert.deepStrictEqual(C.fileNames(day), {
   const add = (s, g, kind, status) => d2.people.push({ id: C.uid(), surname: s, initial: 'А', stop: 'Рынок', kind, gazId: g.id, status: status || 'ok', flags: [] });
   add('Поляков', mix, 'поле'); add('Цехова', mix, 'цех'); add('Яковлев', mix, 'цех'); add('Водилов', car, 'поле');
   assert.deepStrictEqual(C.peopleOf(d2, mix).map((p) => p.surname), ['Цехова', 'Яковлев', 'Поляков']);
-  assert.strictEqual(C.fileNames(d2).word, '22_09_1gazel_1mashina_Testov_Zubilikha.docx');
   const ws2 = Gen.buildExcel(d2, ExcelJS).worksheets[0];
   assert.strictEqual(ws2.getCell('B5').value, 'Цехова А');
   assert.strictEqual(ws2.getCell('F5').value, 3000);
@@ -109,7 +109,6 @@ assert.deepStrictEqual(C.fileNames(day), {
   car.fuel = '1000';
   d2.people.find((p) => p.surname === 'Водилов').driver = true;
   d2.brigadier = '';
-  assert.deepStrictEqual(C.fileNames(d2), { word: '22_09_1gazel_1mashina_Zubilikha.docx', excel: '22_09_2026_brigada_4chel.xlsx' });
   const ws3 = Gen.buildExcel(d2, ExcelJS).worksheets[0];
   assert.strictEqual(ws3.getCell('L6').value, 5500);
   assert.strictEqual(ws3.getCell('C2').value, null);
