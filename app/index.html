@@ -520,6 +520,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   });
 
   function render() {
+    renderLater = false;
     document.querySelectorAll('#tabs button').forEach(function (b) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
@@ -711,8 +712,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     let h = '<section>';
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
-      '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле"></textarea>' +
-      '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button></div>' +
+      '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
+      '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button>' + (vkDraft ? '<button class="btn" data-act="vkClear">Очистить</button>' : '') + '</div>' +
       (parseReport ? parseReport : '') +
       '</div>';
 
@@ -985,7 +986,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     try { issueDraft.img = await shrinkImage(item.getAsFile()); } catch (err) { issueMsg = 'Не получилось вставить картинку.'; }
     render();
   });
-  $main.addEventListener('input', function (e) { if (e.target.id === 'issueText') issueDraft.text = e.target.value; });
+  $main.addEventListener('input', function (e) { if (e.target.id === 'issueText') issueDraft.text = e.target.value; if (e.target.id === 'vkText') vkDraft = e.target.value; });
 
   // ---------- Файлы ----------
   function renderFiles() {
@@ -1092,11 +1093,14 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     timer: null, busy: false, again: false, by: null, at: 0, byName: '', err: '',
   };
   let renderLater = false;
+  // Вставленный текст из ВК живёт отдельно от поля: перерисовка из-за правки второго человека его не сотрёт.
+  let vkDraft = '';
   function editing() { const a = document.activeElement; return !!a && $main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
   // Пока человек печатает, чужие правки не перерисовывают поле под пальцем — покажу после.
   function rerender() { if (editing()) renderLater = true; else render(); }
   $main.addEventListener('focusout', function () {
-    setTimeout(function () { if (renderLater && !editing()) { renderLater = false; render(); } }, 0);
+    // Небольшая пауза: если палец уже жмёт кнопку («Разобрать»), сначала сработает она, а не перерисовка.
+    setTimeout(function () { if (renderLater && !editing()) render(); }, 350);
   });
   function plainDay() { const d = JSON.parse(JSON.stringify(day)); delete d.example; return d; }
   function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)), tally: JSON.parse(JSON.stringify(tally)) }; }
@@ -1610,17 +1614,27 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         break;
       case 'parse': {
         assignReport = null;
-        const text = document.getElementById('vkText').value;
+        const ta = document.getElementById('vkText');
+        const text = ta ? ta.value : vkDraft;
+        vkDraft = text;
+        if (!text.trim()) { parseReport = '<div class="note">Вставьте сюда сообщения из чата ВК.</div>'; break; }
         const dp = C.dateParts(day.date);
         if (!dp) { parseReport = '<div class="note">Сначала укажите дату на вкладке «День».</div>'; break; }
         if (day.example) { const fresh = C.newDay(); fresh.date = day.date; day = fresh; }
         const r = C.parseVk(text, dp.d, dp.m, stopsList());
         const existing = {};
         day.people.forEach(function (p) { existing[C.norm(C.personLabel(p))] = true; });
-        let added = 0, dup = [];
+        const was = {};
+        day.people.forEach(function (p) { was[C.norm(C.personLabel(p))] = p; });
+        let added = 0, dup = [], diff = [];
         r.people.forEach(function (x) {
           const k = C.norm(C.personLabel(x));
-          if (existing[k]) { dup.push(C.personLabel(x)); return; }
+          if (existing[k]) {
+            const o = was[k];
+            if (o && C.norm(o.stop) !== C.norm(x.stop)) diff.push(C.personLabel(x) + ': было «' + o.stop + '», теперь «' + x.stop + '»');
+            else dup.push(C.personLabel(x));
+            return;
+          }
           existing[k] = true;
           const np = { id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw };
           if (np.phone) rememberPhone(np); else fillPhone(np);
@@ -1628,16 +1642,27 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           flashIds.add(np.id);
           added++;
         });
+        // Новых сразу раскладываю по газелям; кто уже сидит в газели — не трогаю.
+        const vansNow = day.gazelles.some(function (g) { return g.vehicle !== 'машина'; });
+        let placedNote = '';
+        if (added && vansNow) {
+          const ar = C.autoAssign(day, stopsList(), 'free');
+          assignReport = assignSummary(ar);
+          placedNote = 'Разложил по газелям: ' + ar.placed + '. ' + (ar.left.length ? 'Остались без газели: ' + ar.left.length + ' (почему — в «Распределить по газелям» ниже). ' : '');
+        }
+        if (added) vkDraft = '';
         const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
         const other = r.skipped.filter(function (s) { return s.reason === 'другая дата'; }).length;
         const bad = r.skipped.filter(function (s) { return s.reason !== 'другая дата'; });
-        parseReport = '<div class="note">Добавлено: ' + added + '. ' +
+        parseReport = '<div class="note">Добавлено: ' + added + '. ' + placedNote +
+          (diff.length ? '<br><b>⚠ Уже в списке, но с другой остановкой:</b> ' + esc(diff.join('; ')) + '. Оставил как было.<br>' : '') +
           (flagged ? 'Проверить: ' + flagged + ' (помечены ⚠). ' : '') +
           (dup.length ? 'Уже были в списке: ' + esc(dup.join(', ')) + '. ' : '') +
           (other ? 'Строк с другой датой: ' + other + '. ' : '') +
           (bad.length ? '<br>Не разобрал: ' + bad.map(function (s) { return '«' + esc(s.raw) + '»'; }).join(', ') : '') + '</div>';
         break;
       }
+      case 'vkClear': vkDraft = ''; parseReport = ''; break;
       case 'pAdd': {
         const g = gById(b.dataset.g);
         day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: g && g.kind === 'Цех' ? 'цех' : 'поле', phone: '', gazId: b.dataset.g, status: 'ok', flags: [] });
