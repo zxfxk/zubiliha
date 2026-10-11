@@ -292,7 +292,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const h = loadHist();
     const json = JSON.stringify(d);
     if (h.length && JSON.stringify(h[h.length - 1].day) === json) return;
-    h.push({ at: Date.now(), why: why, day: JSON.parse(json) });
+    // Кто работал: для автокопии и «перед правкой» — автор последней правки общего дня, иначе тот, кто на этом телефоне.
+    const by = sync.on ? (/^(автокопия|перед правкой )/.test(why) ? sync.by || sync.me : sync.me) || '' : '';
+    h.push({ at: Date.now(), why: why, by: by, day: JSON.parse(json) });
     while (h.length > HIST_MAX) h.shift();
     // Если память переполнена, выкидываю старые копии.
     while (h.length) { try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); return; } catch (e) { h.shift(); } }
@@ -514,8 +516,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const placed = active.filter(function (p) { return p.gazId; }).length;
     const cap = day.gazelles.reduce(function (s, g) { return s + (+g.capacity || 0); }, 0);
     const noshow = day.people.filter(function (p) { return p.status === 'noshow'; }).length;
+    // Сколько ещё людей нужно найти: все места минус все, кто едет (и в газелях, и пока без газели).
+    const left = cap - active.length;
+    const need = !cap ? '' : left > 0 ? ', осталось набрать ' + left + ' ' + (left % 10 === 1 && left % 100 !== 11 || [2, 3, 4].indexOf(left % 10) >= 0 && [12, 13, 14].indexOf(left % 100) < 0 ? 'человека' : 'человек')
+      : left === 0 ? ', набрано полностью' : ', людей больше, чем мест, на ' + (-left);
     document.getElementById('subtitle').textContent =
-      (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' +
+      (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' + need +
       (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
       (noshow ? ' · не вышли ' + noshow : '') +
       (syncLine() ? '\n' + syncLine() : '');
@@ -620,7 +626,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const x = r.x, i = r.i;
       const n = (x.day.people || []).filter(function (p) { return p.status !== 'refused'; }).length;
       const dp = C.dateParts(x.day.date);
-      const info = fmtAt(new Date(x.at).toISOString()) + ' · ' + esc(x.why) + ' · день ' + (dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : '?') + ', ' + n + ' чел.';
+      const who = whoName(x.by, false);
+      const info = fmtAt(new Date(x.at).toISOString()) + (who ? ' · ' + esc(who) : '') + ' · ' + esc(x.why) + ' · день ' + (dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : '?') + ', ' + n + ' чел.';
       if (pendingConfirm === 'histBack' + i) {
         return '<div class="hist"><div>' + info + '</div><div class="note">Текущий день заменится этой копией' + (sync.on ? ' у всех, кто вошёл' : '') + '. Сам текущий день тоже сохранится в истории.</div>' +
           '<div class="confirm"><button class="btn danger" data-act="histBack" data-i="' + i + '" data-yes="1">Вернуть</button><button class="btn" data-act="cancelConfirm">Отмена</button></div></div>';
@@ -1236,7 +1243,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     }
     sync.missing = false;
     const d = snap.data();
-    sync.by = d.by || null; sync.at = d.at || 0;
+    sync.by = d.by || null; sync.at = d.at || 0; sync.log = d.log || [];
     resolveName();
     if (d.rev === sync.rev) { rerender(); return; } // моя же запись или уже учтено
     const remote = migrate(JSON.parse(JSON.stringify(d.day || {})));
@@ -1268,6 +1275,35 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     rerender();
   }
 
+  // Имена авторов правок. На GitHub-сайте автор и так записан именем, на странице в Claude — номером аккаунта.
+  const nameCache = {};
+  function whoName(id, selfAsYou) {
+    if (!id) return '';
+    if (selfAsYou && id === sync.me) return 'вы';
+    if (sync.mode === 'firebase') return id;
+    if (nameCache[id] === undefined) { fetchNames([id]); return ''; }
+    return nameCache[id];
+  }
+  async function fetchNames(ids) {
+    ids = ids.filter(function (id) { return id && nameCache[id] === undefined; });
+    if (!ids.length || !sync.user) return;
+    ids.forEach(function (id) { nameCache[id] = ''; });
+    try {
+      const ps = await sync.user.profiles(ids);
+      ids.forEach(function (id) { nameCache[id] = (ps[id] && ps[id].name) || 'второй человек'; });
+    } catch (e) { ids.forEach(function (id) { nameCache[id] = 'второй человек'; }); }
+    updateTop(); if (tab === 'day') rerender();
+  }
+  // Короткая история правок общего дня: кто и когда. Подряд идущие правки одного человека в пределах получаса — одна запись.
+  const LOG_KEEP = 4, LOG_GAP = 30 * 60000;
+  function nextLog(prev, by, at) {
+    const log = (prev || []).slice(-LOG_KEEP);
+    const last = log[log.length - 1];
+    if (last && last.by === by && at - last.at < LOG_GAP) log[log.length - 1] = { by: by, at: at };
+    else log.push({ by: by, at: at });
+    return log.slice(-LOG_KEEP);
+  }
+
   async function resolveName() {
     if (sync.mode === 'firebase') { sync.byName = sync.by && sync.by === sync.me ? 'вы' : (sync.by || ''); return; }
     if (!sync.by || !sync.user) { sync.byName = ''; return; }
@@ -1295,7 +1331,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       if (!day.example && (!snap.exists || JSON.stringify(payload) !== JSON.stringify(sync.base))) {
         const rev = C.uid() + C.uid();
         sync.rev = rev;
-        await sync.dayRef.set({ day: payload, rev: rev, by: sync.me || '', at: Date.now() });
+        const at = Date.now(), log = nextLog(snap.exists ? snap.data().log : [], sync.me || '', at);
+        await sync.dayRef.set({ day: payload, rev: rev, by: sync.me || '', at: at, log: log });
+        sync.log = log;
         sync.base = payload; sync.missing = false;
       }
       const bsnap = await sync.bookRef.get();
@@ -1441,6 +1479,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (sync.err) return sync.err;
     const t = sync.at ? new Date(sync.at) : null;
     const when = t ? C.pad2(t.getHours()) + ':' + C.pad2(t.getMinutes()) : '';
+    const log = (sync.log || []).slice(-LOG_KEEP);
+    if (log.length) {
+      const today = new Date().toDateString();
+      return 'Общий день' + (sync.readOnly ? ' (только просмотр)' : '') + ' · правки: ' + log.map(function (x) {
+        const t = new Date(x.at);
+        const hm = C.pad2(t.getHours()) + ':' + C.pad2(t.getMinutes());
+        return (whoName(x.by, true) || '…') + ' ' + (t.toDateString() === today ? hm : C.pad2(t.getDate()) + '.' + C.pad2(t.getMonth() + 1) + ' ' + hm);
+      }).join(' · ');
+    }
     return 'Общий день' + (sync.readOnly ? ' (только просмотр)' : '') + (sync.byName && when ? ' · правка: ' + sync.byName + ', ' + when : '');
   }
 
