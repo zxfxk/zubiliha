@@ -43,7 +43,9 @@ jobs:
             printf '<meta name="apple-mobile-web-app-title" content="Газели">\n'
             printf '<meta name="theme-color" content="#2f3640">\n'
             printf '</head>\n<body>\n'
-            cat app/index.html
+            # Метка версии у скриптов, чтобы после выкладки браузер не брал старый core.js из кэша.
+            v="${GITHUB_SHA::8}"
+            sed -e "s#src=\"core.js\"#src=\"core.js?v=$v\"#" -e "s#src=\"gen.js\"#src=\"gen.js?v=$v\"#" app/index.html
             printf '\n</body>\n</html>\n'
           } > _site/index.html
       - uses: actions/configure-pages@v5
