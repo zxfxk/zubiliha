@@ -120,6 +120,14 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
   const JSZip = require('jszip');
   const xml = await (await JSZip.loadAsync(await D.Packer.toBuffer(Gen.buildWord(d2, D)))).file('word/document.xml').async('string');
   assert.strictEqual((xml.match(/прошу отписаться/g) || []).length, 1);
+  // У людей во всех газелях один размер шрифта (10 пт), и с подписью «ЦЕХ:»/«Поле:» тоже.
+  const runs = xml.match(/<w:r>.*?<\/w:r>/g) || [];
+  const seated = d2.people.filter((p) => p.gazId);
+  assert.ok(seated.length >= 3);
+  seated.forEach((p) => {
+    const r = runs.find((x) => x.includes('>' + C.personLabel(p)) || x.includes(': ' + C.personLabel(p)));
+    assert.ok(r && /<w:sz w:val="20"\/>/.test(r), C.personLabel(p));
+  });
 
   // Сортировка во всех газелях: по остановкам, внутри по фамилиям.
   const d3 = C.newDay();
@@ -129,6 +137,9 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
   assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Без', 'Ахов', 'Бобров', 'Алов']);
   C.sortAll(d3, 'name');
   assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Алов', 'Ахов', 'Без', 'Бобров']);
+  // По остановкам в одной газели.
+  C.sortAlpha(d3, g3.id, 'stop');
+  assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Без', 'Ахов', 'Бобров', 'Алов']);
 
   C.sortAlpha(d2, mix.id);
   assert.deepStrictEqual(d2.people.filter((p) => p.gazId === mix.id).map((p) => p.surname), ['Поляков', 'Цехова', 'Яковлев']);

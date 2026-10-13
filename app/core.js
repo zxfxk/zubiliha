@@ -415,19 +415,20 @@
     return personLabel(a).localeCompare(personLabel(b), 'ru', { sensitivity: 'base' });
   }
 
-  // Сортирует по алфавиту людей одной газели (или «без газели» при gazId = ''), остальных не трогает.
-  function sortAlpha(day, gazId) {
+  // По остановкам (по алфавиту), внутри — по фамилиям.
+  function byStop(a, b) { return String(a.stop || '').localeCompare(String(b.stop || ''), 'ru', { sensitivity: 'base' }) || byAlpha(a, b); }
+
+  // Сортирует людей одной газели (или «без газели» при gazId = '') по алфавиту, by 'stop' — по остановкам; остальных не трогает.
+  function sortAlpha(day, gazId, by) {
     const inGroup = function (p) { return (p.gazId || '') === (gazId || '') && p.status !== 'refused'; };
-    const sorted = day.people.filter(inGroup).sort(byAlpha);
+    const sorted = day.people.filter(inGroup).sort(by === 'stop' ? byStop : byAlpha);
     let k = 0;
     day.people = day.people.map(function (p) { return inGroup(p) ? sorted[k++] : p; });
   }
 
   // Сортирует людей во всех газелях: by 'name' — по фамилиям, 'stop' — по остановкам (по алфавиту), внутри — по фамилиям.
   function sortAll(day, by) {
-    const cmp = by === 'stop'
-      ? function (a, b) { return String(a.stop || '').localeCompare(String(b.stop || ''), 'ru', { sensitivity: 'base' }) || byAlpha(a, b); }
-      : byAlpha;
+    const cmp = by === 'stop' ? byStop : byAlpha;
     const inVan = function (p) { return p.gazId && p.status !== 'refused'; };
     const sorted = day.people.filter(inVan).sort(cmp);
     let k = 0;

@@ -34,6 +34,8 @@
   --warn: #f0b85a; --warn-bg: #3a2d12; --danger: #ff8a80; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+/* Телефон не должен сам увеличивать текст в широких блоках: из-за этого в предпросмотре у газелей был разный шрифт. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: var(--bg); color: var(--fg); font: 15px/1.4 var(--body); margin: 0; }
 .wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 0 96px; }
 header.top {
@@ -61,6 +63,9 @@ input, select, textarea {
   border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
 }
 textarea { min-height: 120px; resize: vertical; }
+/* На айфоне поле даты своё: без этого оно шире колонки и съезжает. */
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: calc(1.3em + 20px); text-align: left; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn {
   font: 600 15px var(--body); border-radius: 8px; padding: 11px 14px; border: 1px solid var(--line);
@@ -545,12 +550,29 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     // Карточки плавно появляются только при смене вкладки; обычная перерисовка после нажатия идёт без анимации.
     const entering = shownTab !== tab;
     shownTab = tab;
+    // Раскрытые блоки («История дня», «Время, оплата, работа»…) остаются раскрытыми после перерисовки.
+    const opened = entering ? [] : detailsKeys().filter(function (x) { return x.d.open; }).map(function (x) { return x.k; });
     $main.classList.remove('enter');
     $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
+    detailsKeys().forEach(function (x) { if (!x.d.open && opened.indexOf(x.k) >= 0) { x.d.dataset.kept = '1'; x.d.open = true; } });
+    // Если таблица Word не влезла по ширине, говорю, что её можно листать: иначе кажется, что она обрезана.
+    const pv = $main.querySelector('.preview'), hint = document.getElementById('scrollHint');
+    if (pv && hint) hint.hidden = pv.scrollWidth <= pv.clientWidth;
     flashIds.clear();
     if (entering) { void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
+  }
+
+  // Ключ блока — заголовок без цифр и скобок плюс номер среди одинаковых: «Время, оплата, работа#1».
+  function detailsKeys() {
+    const seen = {};
+    return Array.prototype.map.call($main.querySelectorAll('details'), function (d) {
+      const s = d.querySelector('summary');
+      const t = s ? s.textContent.replace(/\([^)]*\)|\d/g, '').trim() : '';
+      seen[t] = (seen[t] || 0) + 1;
+      return { d: d, k: t + '#' + seen[t] };
+    });
   }
 
   function exampleBanner() {
@@ -724,9 +746,29 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
 
   // ---------- Люди ----------
+  // Поиск человека по фамилии: список совпадений с газелью и местом, нажатие — прокрутка к нему.
+  let searchQ = '';
+  function searchResults() {
+    const q = C.norm(searchQ);
+    if (!q) return '';
+    const found = day.people.filter(function (p) { return C.norm(C.personLabel(p)).indexOf(q) >= 0; }).slice(0, 8);
+    if (!found.length) return '<div class="muted">Никого не нашёл.</div>';
+    return found.map(function (p) {
+      const g = gById(p.gazId);
+      const where = p.status === 'refused' ? 'отказ' : g ? gTitle(g) + ', место ' + (C.peopleOf(day, g).indexOf(p) + 1) : 'без газели';
+      return '<button class="btn small" data-act="pFind" data-id="' + p.id + '">' + esc(C.personLabel(p)) + ' · ' + esc(where) + '</button>';
+    }).join('');
+  }
+  function searchCard() {
+    if (!day.people.length) return '';
+    return '<div class="card"><h2>Найти человека</h2>' +
+      '<input id="pSearch" type="search" placeholder="Фамилия" autocomplete="off" value="' + esc(searchQ) + '">' +
+      '<div id="pSearchRes" class="row">' + searchResults() + '</div></div>';
+  }
+
   function renderPeople() {
     const stops = stopsList();
-    let h = '<section>';
+    let h = '<section>' + searchCard();
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
       '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
@@ -761,7 +803,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
         seatHint(x.g, n, cap, stops) +
-        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button></div>' : '') +
+        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '" data-v="stop">По остановкам</button></div>' : '') +
         x.list.map(function (p, i) {
           let label = '';
           if (x.g.kind === 'Цех/поле') {
@@ -897,7 +939,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
       '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
-      day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') + '</select></div>' +
+      day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') +
+      '<option value="replaceField">→ Замена поле</option><option value="replaceShop">→ Замена цех</option></select></div>' +
       '<div class="line2">' +
       '<div class="seg" role="group" aria-label="Статус">' +
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
@@ -1012,7 +1055,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     try { issueDraft.img = await shrinkImage(item.getAsFile()); } catch (err) { issueMsg = 'Не получилось вставить картинку.'; }
     render();
   });
-  $main.addEventListener('input', function (e) { if (e.target.id === 'issueText') issueDraft.text = e.target.value; if (e.target.id === 'vkText') vkDraft = e.target.value; });
+  $main.addEventListener('input', function (e) {
+    if (e.target.id === 'issueText') issueDraft.text = e.target.value;
+    if (e.target.id === 'vkText') vkDraft = e.target.value;
+    // Список совпадений обновляю на месте, без перерисовки: клавиатура на телефоне не закроется.
+    if (e.target.id === 'pSearch') { searchQ = e.target.value; document.getElementById('pSearchRes').innerHTML = searchResults(); }
+  });
 
   // ---------- Файлы ----------
   function renderFiles() {
@@ -1026,6 +1074,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<button class="btn" data-act="shotCopy">Скопировать картинкой</button>' +
       (canShareFiles() ? '<button class="btn" data-act="shotShare">Отправить картинкой</button>' : '<button class="btn" data-act="shotSave">Сохранить картинку</button>') +
       '</div><div id="shotMsg" class="muted" role="status"></div>' +
+      '<div class="muted" id="scrollHint" hidden>Таблица шире экрана: листайте её вправо →</div>' +
       '<div class="preview">' + previewHtml() + '</div></div>' +
       '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
       '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
@@ -1624,7 +1673,14 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       save(); render(); return;
     }
     const act = t.dataset.act;
-    if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flashIds.add(p.id); }
+    if (act === 'pGaz' && /^replace/.test(t.value)) {
+      // На замену: человек уходит из списка и дописывается в «Замена поле/цех». Копия дня остаётся в истории.
+      const p = person(t.dataset.id), k = t.value, cur = String(day[k] || '').trim();
+      keep('перед заменой ' + C.personLabel(p));
+      day[k] = (cur && cur !== '-' ? cur + ', ' : '') + C.personLabel(p);
+      day.people = day.people.filter(function (x) { return x !== p; });
+    }
+    else if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flashIds.add(p.id); }
     else if (act === 'moveAll' && t.value) {
       day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
     }
@@ -1644,6 +1700,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const d = e.target;
     if (d.id === 'tallyDays') tallyOpen = d.open;
     if (d.tagName !== 'DETAILS' || !d.open) return;
+    if (d.dataset.kept) { delete d.dataset.kept; return; }
     d.classList.add('opening');
     setTimeout(function () { d.classList.remove('opening'); }, 400);
   }, true);
@@ -1772,7 +1829,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         break;
       }
       case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; g.fuel = '1000'; day.gazelles.push(g); break; }
-      case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'pFind': {
+        const el = $main.querySelector('.person[data-id="' + id + '"]');
+        if (!el) return;
+        const dt = el.closest('details'); if (dt) dt.open = true;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Подсвечиваю, когда прокрутка почти доехала, иначе вспышку не видно.
+        el.classList.remove('flash'); setTimeout(function () { el.classList.add('flash'); }, 450);
+        return;
+      }
+      case 'sortAlpha': C.sortAlpha(day, b.dataset.g, b.dataset.v); break;
       case 'sortAll': C.sortAll(day, b.dataset.v); break;
       case 'login': doLogin(); return;
       case 'logout': await doLogout(); render(); return;
