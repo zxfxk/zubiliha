@@ -297,6 +297,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!d.namesV2) { d.latinNames = false; d.namesV2 = true; } // раньше по умолчанию была латиница
     d.gazelles = (d.gazelles || []).map(function (g) { return Object.assign(C.newGazelle(), g); });
     d.people = (d.people || []).map(function (p) { return Object.assign({ id: C.uid(), status: 'ok', flags: [], gazId: '', phone: '', kind: 'поле' }, p); });
+    C.migrateReplace(d, C.parseStops(d.stopsText));
     return d;
   }
   function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); recordTally(); updateTop(); queueSync(); }
@@ -535,13 +536,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const placed = active.filter(function (p) { return p.gazId; }).length;
     const cap = day.gazelles.reduce(function (s, g) { return s + (+g.capacity || 0); }, 0);
     const noshow = day.people.filter(function (p) { return p.status === 'noshow'; }).length;
-    // Сколько ещё людей нужно найти: все места минус все, кто едет (и в газелях, и пока без газели).
-    const left = cap - active.length;
+    const reserve = active.filter(C.reserveKind).length;
+    // Сколько ещё людей нужно найти: все места минус все, кто едет (и в газелях, и пока без газели), кроме замены.
+    const left = cap - (active.length - reserve);
     const need = !cap ? '' : left > 0 ? ', осталось набрать ' + left + ' ' + (left % 10 === 1 && left % 100 !== 11 || [2, 3, 4].indexOf(left % 10) >= 0 && [12, 13, 14].indexOf(left % 100) < 0 ? 'человека' : 'человек')
       : left === 0 ? ', набрано полностью' : ', людей больше, чем мест, на ' + (-left);
     document.getElementById('subtitle').textContent =
       (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' + need +
-      (active.length - placed ? ' · без газели ' + (active.length - placed) : '') +
+      (active.length - placed - reserve ? ' · без газели ' + (active.length - placed - reserve) : '') +
+      (reserve ? ' · замена ' + reserve : '') +
       (noshow ? ' · не вышли ' + noshow : '') +
       (syncLine() ? '\n' + syncLine() : '');
   }
@@ -768,7 +771,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!found.length) return '<div class="muted">Никого не нашёл.</div>';
     return found.map(function (p) {
       const g = gById(p.gazId);
-      const where = p.status === 'refused' ? 'отказ' : g ? gTitle(g) + ', место ' + (C.peopleOf(day, g).indexOf(p) + 1) : 'без газели';
+      const where = p.status === 'refused' ? 'отказ' : g ? gTitle(g) + ', место ' + (C.peopleOf(day, g).indexOf(p) + 1) : C.reserveKind(p) ? 'замена ' + C.reserveKind(p) : 'без газели';
       return '<button class="btn small" data-act="pFind" data-id="' + p.id + '">' + esc(C.personLabel(p)) + ' · ' + esc(where) + '</button>';
     }).join('');
   }
@@ -790,7 +793,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '</div>';
 
     const groups = day.gazelles.map(function (g) { return { g: g, list: C.peopleOf(day, g) }; });
-    const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
+    const none = day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; });
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
 
     if (day.people.some(function (p) { return p.status !== 'refused'; })) h += assignCard(none.length);
@@ -800,7 +803,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       h += '<div class="card gcard"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
       if (none.length) {
         h += '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="">А–Я</button><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
-          day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') + '</select></div>';
+          day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') +
+          '<option value="replace">Замену (поле и цех по человеку)</option></select></div>';
       } else {
         h += '<div class="muted">Пока никого. Вставьте сообщения из ВК выше или добавьте человека вручную.</div>';
       }
@@ -828,12 +832,20 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         '<div class="row"><button class="btn small" data-act="pAdd" data-g="' + x.g.id + '">Добавить человека</button></div></div>';
     });
 
+    // Замена — такие же списки, как газели: остановка, статус, перенос в газель выбором.
+    [['поле', 'Замена поле'], ['цех', 'Замена цех']].forEach(function (r) {
+      const list = C.reserveOf(day, r[0]);
+      h += '<div class="card gcard"><div class="ghead"><h2>' + r[1] + '</h2><span class="count">' + list.length + '</span></div>' +
+        (list.length > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="" data-r="' + r[0] + '">По алфавиту</button><button class="btn small" data-act="sortAlpha" data-g="" data-r="' + r[0] + '" data-v="stop">По остановкам</button></div>' : '') +
+        (list.length ? '' : '<div class="muted">Пока никого. Перенести сюда можно выбором «→ ' + r[1] + '» у человека.</div>') +
+        list.map(function (p, i) { return personRow(p, i + 1); }).join('') +
+        '<div class="row"><button class="btn small" data-act="pAdd" data-g="" data-r="' + r[0] + '">Добавить человека</button></div></div>';
+    });
+
     if (refused.length) {
       h += '<div class="card"><details><summary>Отказались (' + refused.length + ')</summary><div style="display:grid;gap:10px;margin-top:10px">' +
         refused.map(function (p, i) { return personRow(p, i + 1); }).join('') + '</div></details></div>';
     }
-    h += '<div class="card"><h2>Замена</h2><div class="muted">Те, кто не поместился в газели.</div><div class="grid2">' + field('Замена поле', 'replaceField', day.replaceField) + field('Замена цех', 'replaceShop', day.replaceShop) + '</div>' +
-      (none.length ? '<div class="row"><button class="btn small" data-act="replaceFill">Взять из «Без газели» (' + none.length + ')</button></div>' : '') + '</div>';
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
   }
@@ -947,13 +959,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const st = p.status || 'ok';
     const g = gById(p.gazId);
     const inCar = !!g && g.vehicle === 'машина';
+    const rk = C.reserveKind(p);
     return '<div class="person ' + st + flashAttr(p.id) + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
       '<select data-act="pGaz" data-id="' + p.id + '" aria-label="Газель"><option value="">—</option>' +
       day.gazelles.map(function (g, gi) { return '<option value="' + g.id + '"' + (g.id === p.gazId ? ' selected' : '') + '>' + gShort(g, gi) + '</option>'; }).join('') +
-      '<option value="replaceField">→ Замена поле</option><option value="replaceShop">→ Замена цех</option></select></div>' +
+      // В узком выборе у человека из замены видно коротко «Зам», как «1П» у газели.
+      '<option value="replaceField"' + (rk === 'поле' ? ' selected>Зам' : '>→ Замена поле') + '</option><option value="replaceShop"' + (rk === 'цех' ? ' selected>Зам' : '>→ Замена цех') + '</option></select></div>' +
       '<div class="line2">' +
       '<div class="seg" role="group" aria-label="Статус">' +
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
@@ -963,7 +977,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
       // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
       (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
-      (!g || g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
+      (!g && !rk || g && g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
       '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
       (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
       // Телефон и «Удалить» переносятся вместе и прижаты вправо.
@@ -1163,8 +1177,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       return '<td style="font-size:10px"' + (g.noOrder ? ' class="off"' : '') + '>' + (g.vehicle === 'машина' ? '' : 'По остановкам прошу отписаться' + (g.contact ? ' – ' + esc(g.contact) : '') + '<br>') + '<b>Остановки:</b><br>' +
         C.stopSummary(day, g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join('<br>') + '</td>';
     }).join('') + '</tr>';
-    h += '<tr><td colspan="' + (gs.length + 1) + '" style="text-align:center"><div class="red">Замена поле: ' + esc(day.replaceField || '-') + '</div>' +
-      '<div class="red">Замена цех: ' + esc(day.replaceShop || '-') + '</div><div><span class="red">!!</span>ЗП поле/цех прошу получить/выдать – ' + esc(day.zp) + '</div>' +
+    h += '<tr><td colspan="' + (gs.length + 1) + '" style="text-align:center"><div class="red">Замена поле: ' + esc(C.reserveText(day, 'поле')) + '</div>' +
+      '<div class="red">Замена цех: ' + esc(C.reserveText(day, 'цех')) + '</div><div><span class="red">!!</span>ЗП поле/цех прошу получить/выдать – ' + esc(day.zp) + '</div>' +
       '<div><i>' + esc(day.footer) + '</i></div></td></tr></table>';
     return h;
   }
@@ -1651,7 +1665,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
   function person(id) { return day.people.find(function (p) { return p.id === id; }); }
   function moveWithin(p, dir) {
-    const same = day.people.filter(function (x) { return (x.gazId || '') === (p.gazId || '') && (x.status === 'refused') === (p.status === 'refused'); });
+    const same = day.people.filter(function (x) { return (x.gazId || '') === (p.gazId || '') && C.reserveKind(x) === C.reserveKind(p) && (x.status === 'refused') === (p.status === 'refused'); });
     const k = same.indexOf(p);
     const other = same[k + dir];
     if (!other) return;
@@ -1686,16 +1700,18 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       save(); render(); return;
     }
     const act = t.dataset.act;
-    if (act === 'pGaz' && /^replace/.test(t.value)) {
-      // На замену: человек уходит из списка и дописывается в «Замена поле/цех». Копия дня остаётся в истории.
-      const p = person(t.dataset.id), k = t.value, cur = String(day[k] || '').trim();
-      keep('перед заменой ' + C.personLabel(p));
-      day[k] = (cur && cur !== '-' ? cur + ', ' : '') + C.personLabel(p);
-      day.people = day.people.filter(function (x) { return x !== p; });
+    if (act === 'pGaz') {
+      // «→ Замена поле/цех»: человек остаётся со всеми данными, только переезжает в список замены.
+      const p = person(t.dataset.id), r = t.value === 'replaceField' ? 'поле' : t.value === 'replaceShop' ? 'цех' : '';
+      p.gazId = r ? '' : t.value; p.reserve = r;
+      if (r) p.kind = r;
+      toEnd(p); flash(p.id);
     }
-    else if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flash(p.id); }
     else if (act === 'moveAll' && t.value) {
-      day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
+      day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; }).forEach(function (p) {
+        if (t.value === 'replace') p.reserve = p.kind === 'цех' ? 'цех' : 'поле'; else p.gazId = t.value;
+        toEnd(p);
+      });
     }
     else if (act === 'gContact' && t.value) { day.gazelles[+t.dataset.i].contact = C.accusative(C.personLabel(person(t.value))); }
     else if (t.dataset.tally) {
@@ -1826,12 +1842,6 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'gKind': day.gazelles[i].kind = b.dataset.v; break;
       case 'gLetter': { const g = day.gazelles[i]; g.letter = C.owner(g) === b.dataset.v ? '' : b.dataset.v; break; }
       case 'gNoOrder': day.gazelles[i].noOrder = !day.gazelles[i].noOrder; break;
-      case 'replaceFill': {
-        const none = day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; });
-        const names = function (k) { const l = none.filter(function (p) { return (p.kind === 'цех') === (k === 'цех'); }).map(C.personLabel); return l.length ? l.join(', ') : '-'; };
-        day.replaceField = names('поле'); day.replaceShop = names('цех');
-        break;
-      }
       case 'gVehicle': {
         const g = day.gazelles[i];
         if ((g.vehicle || 'газель') === b.dataset.v) return;
@@ -1852,7 +1862,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         el.classList.remove('found'); setTimeout(function () { el.classList.add('found'); }, 450);
         return;
       }
-      case 'sortAlpha': C.sortAlpha(day, b.dataset.g, b.dataset.v); break;
+      case 'sortAlpha': C.sortAlpha(day, b.dataset.g, b.dataset.v, b.dataset.r); break;
       case 'sortAll': C.sortAll(day, b.dataset.v); break;
       case 'login': doLogin(); return;
       case 'logout': await doLogout(); render(); return;
@@ -1947,7 +1957,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       case 'vkClear': vkDraft = ''; parseReport = ''; break;
       case 'pAdd': {
         const g = gById(b.dataset.g);
-        day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: g && g.kind === 'Цех' ? 'цех' : 'поле', phone: '', gazId: b.dataset.g, status: 'ok', flags: [] });
+        const r = b.dataset.r || '';
+        day.people.push({ id: C.uid(), surname: '', initial: '', stop: '', kind: r || (g && g.kind === 'Цех' ? 'цех' : 'поле'), phone: '', gazId: b.dataset.g, status: 'ok', flags: [], reserve: r });
         break;
       }
       case 'pStatus': { const p = person(id); const was = p.status; p.status = b.dataset.v; if ((was === 'refused') !== (p.status === 'refused')) toEnd(p); break; }
@@ -1963,7 +1974,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }
       case 'pSeat': {
         const p = person(id);
-        p.gazId = b.dataset.g; toEnd(p); flash(p.id);
+        p.gazId = b.dataset.g; p.reserve = ''; toEnd(p); flash(p.id);
         break;
       }
       case 'shotCopy':

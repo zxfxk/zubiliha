@@ -411,6 +411,35 @@
     return list.filter(function (p) { return p.kind === 'цех'; }).concat(list.filter(function (p) { return p.kind !== 'цех'; }));
   }
 
+  // Замена: человек без газели, отложенный в «Замена поле» или «Замена цех».
+  function reserveKind(p) { return (!p.gazId && p.reserve) || ''; }
+  function reserveOf(day, kind) {
+    return day.people.filter(function (p) { return reserveKind(p) === kind && p.status !== 'refused'; });
+  }
+  // Строка для Word: «Фамилия И Остановка, …» или «-».
+  function reserveText(day, kind) {
+    const l = reserveOf(day, kind).map(function (p) { return (personLabel(p) + ' ' + (p.stop || '')).trim(); }).filter(Boolean);
+    return l.length ? l.join(', ') : '-';
+  }
+  // Старые текстовые поля замены превращаются в людей. id зависят от текста, чтобы два телефона не задвоили людей.
+  function migrateReplace(day, stops) {
+    [['replaceField', 'поле'], ['replaceShop', 'цех']].forEach(function (x) {
+      const text = String(day[x[0]] || '').trim();
+      if (!text || text === '-') return;
+      let h = 0;
+      for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+      text.split(/[,;\n]+/).map(function (s) { return s.replace(/\./g, ' ').trim(); }).filter(function (s) { return s && s !== '-'; }).forEach(function (s, i) {
+        const w = s.split(/\s+/);
+        const hasInit = w.length > 1 && w[1].length === 1;
+        const stop = w.slice(hasInit ? 2 : 1).join(' ');
+        const si = stopInfo(stop, stops);
+        day.people.push({ id: 'r' + x[1].charAt(0) + h.toString(36) + '_' + i, surname: w[0], initial: hasInit ? w[1].toUpperCase() : '', stop: si ? si.name : stop,
+          kind: x[1], phone: '', gazId: '', status: 'ok', flags: [], reserve: x[1] });
+      });
+      day[x[0]] = '-';
+    });
+  }
+
   function byAlpha(a, b) {
     return personLabel(a).localeCompare(personLabel(b), 'ru', { sensitivity: 'base' });
   }
@@ -418,9 +447,9 @@
   // По остановкам (по алфавиту), внутри — по фамилиям.
   function byStop(a, b) { return String(a.stop || '').localeCompare(String(b.stop || ''), 'ru', { sensitivity: 'base' }) || byAlpha(a, b); }
 
-  // Сортирует людей одной газели (или «без газели» при gazId = '') по алфавиту, by 'stop' — по остановкам; остальных не трогает.
-  function sortAlpha(day, gazId, by) {
-    const inGroup = function (p) { return (p.gazId || '') === (gazId || '') && p.status !== 'refused'; };
+  // Сортирует людей одной газели (или «без газели» при gazId = '', или замены reserve) по алфавиту, by 'stop' — по остановкам; остальных не трогает.
+  function sortAlpha(day, gazId, by, reserve) {
+    const inGroup = function (p) { return (p.gazId || '') === (gazId || '') && reserveKind(p) === (reserve || '') && p.status !== 'refused'; };
     const sorted = day.people.filter(inGroup).sort(by === 'stop' ? byStop : byAlpha);
     let k = 0;
     day.people = day.people.map(function (p) { return inGroup(p) ? sorted[k++] : p; });
@@ -534,7 +563,7 @@
   // Предупреждения перед скачиванием.
   function warnings(day) {
     const w = [];
-    const unassigned = day.people.filter(function (p) { return !p.gazId && p.status !== 'refused'; });
+    const unassigned = day.people.filter(function (p) { return !p.gazId && !reserveKind(p) && p.status !== 'refused'; });
     if (unassigned.length) w.push('Без газели: ' + unassigned.length + ' чел. В файлы они не попадут.');
     day.gazelles.forEach(function (g, i) {
       const n = peopleOf(day, g).length;
@@ -570,7 +599,7 @@
   // Где человек: «Газель 2», «Машина 3» или «без газели».
   function placeOf(day, p) {
     const i = day.gazelles.findIndex(function (g) { return g.id === p.gazId; });
-    if (i < 0) return 'без газели';
+    if (i < 0) return reserveKind(p) ? 'замена ' + reserveKind(p) : 'без газели';
     return (day.gazelles[i].vehicle === 'машина' ? 'Машина ' : 'Газель ') + (i + 1);
   }
 
@@ -635,7 +664,7 @@
     day.gazelles.forEach(function (g) { known[g.id] = true; });
     const active = day.people.filter(function (p) { return p.status !== 'refused'; });
     const todo = active.filter(function (p) {
-      if (!known[p.gazId]) return true;
+      if (!known[p.gazId]) return !reserveKind(p);
       return mode === 'all' && vanIds[p.gazId];
     });
     todo.forEach(function (p) { p.gazId = ''; });
@@ -843,7 +872,7 @@
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, parseTally: parseTally, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
+    peopleOf: peopleOf, reserveKind: reserveKind, reserveOf: reserveOf, reserveText: reserveText, migrateReplace: migrateReplace, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, parseTally: parseTally, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
