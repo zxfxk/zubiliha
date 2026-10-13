@@ -508,6 +508,19 @@
     return { word: name(listed) + '.docx', excel: name(went) + '.xlsx' };
   }
 
+  // Выезды по дням: trips[дата] — «фамилия и» всех, кто выехал. Сколько раз каждый выезжал до даты before.
+  function tripCounts(trips, before) {
+    const out = {};
+    Object.keys(trips || {}).forEach(function (date) {
+      if (date < before) (trips[date] || []).forEach(function (k) { out[k] = (out[k] || 0) + 1; });
+    });
+    return out;
+  }
+  function tripsLabel(n) {
+    const a = n % 10, b = n % 100;
+    return n + (a === 1 && b !== 11 ? ' выезд' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? ' выезда' : ' выездов');
+  }
+
   // Чья газель: «М» или «Д» (Миша или Дима); любое другое значение — как есть.
   function owner(g) {
     const l = String(g.letter || '').trim().toLowerCase();
@@ -872,7 +885,7 @@
     norm: norm, parseStops: parseStops, findStopByText: findStopByText, parseVk: parseVk,
     accusative: accusative, translit: translit, dateParts: dateParts, pad2: pad2, uid: uid,
     newDay: newDay, newGazelle: newGazelle, gz: gz, kindOf: kindOf, payFor: payFor, workFor: workFor, sortAlpha: sortAlpha, sortAll: sortAll, formatPhone: formatPhone, vehicleCounts: vehicleCounts, hh: hh, personLabel: personLabel,
-    peopleOf: peopleOf, reserveKind: reserveKind, reserveOf: reserveOf, reserveText: reserveText, migrateReplace: migrateReplace, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, parseTally: parseTally, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
+    peopleOf: peopleOf, reserveKind: reserveKind, reserveOf: reserveOf, reserveText: reserveText, migrateReplace: migrateReplace, autoAssign: autoAssign, mergeMap: mergeMap, mergeDay: mergeDay, stopInfo: stopInfo, stopSummary: stopSummary, wentPeople: wentPeople, fileNames: fileNames, tripCounts: tripCounts, tripsLabel: tripsLabel, warnings: warnings, owner: owner, vanTally: vanTally, tallyText: tallyText, parseTally: parseTally, duplicates: duplicates, suggestStop: suggestStop, placeOf: placeOf,
   };
   root.Core = Core;
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

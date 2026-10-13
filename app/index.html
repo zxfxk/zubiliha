@@ -43,6 +43,8 @@ header.top {
   border-bottom: 1px solid var(--line); padding-block: 10px; margin-inline: -16px; padding-inline: 16px;
 }
 .top h1 { font: 700 17px/1.2 var(--display); margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.toprow { display: flex; align-items: center; gap: 8px; } .toprow h1 { flex: 1; min-width: 0; }
+#undoBtn { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top .sub { color: var(--muted); font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: pre-line; }
 nav.tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, 1fr);
@@ -105,6 +107,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .issue { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
 .issue:first-of-type { border-top: 0; padding-top: 0; }
 .issue img, .shot img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); justify-self: start; }
+.trips { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
 .phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .phone a { color: var(--accent); text-decoration: none; }
@@ -209,7 +212,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
 
 <div class="wrap">
   <header class="top">
-    <h1 id="title">Газели</h1>
+    <div class="toprow"><h1 id="title">Газели</h1><button class="btn small" id="undoBtn" style="display:none"></button></div>
     <div class="sub" id="subtitle"></div>
   </header>
   <main id="main"></main>
@@ -300,7 +303,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     C.migrateReplace(d, C.parseStops(d.stopsText));
     return d;
   }
-  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); recordTally(); updateTop(); queueSync(); }
+  const undoStack = []; // шаги для «Отменить», см. «отмена» ниже
+  function save() { safeSet(KEY, JSON.stringify(day)); snapshot(); autoKeep(); recordTally(); recordTrips(day); updateTop(); queueSync(); }
 
   // История дня на этом телефоне: копия перед опасными действиями, перед чужой большой правкой и раз в 15 минут.
   const HIST_KEY = 'zubilikha_history_v1';
@@ -375,6 +379,30 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     tally[day.date] = { d: t.d, m: t.m };
     saveTally();
   }
+
+  // Кто в какой день выехал (как в Excel: в газели с заявкой и «Едет»), чтобы у человека было видно «N выездов». Общий для обоих.
+  const TRIPS_KEY = 'zubilikha_trips_v1';
+  let trips = {};
+  try { trips = JSON.parse(localStorage.getItem(TRIPS_KEY) || '{}') || {}; } catch (e) { trips = {}; }
+  function saveTrips() { safeSet(TRIPS_KEY, JSON.stringify(trips)); }
+  function recordTrips(d) {
+    if (d.example || !/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) return;
+    const list = C.wentPeople(d).map(function (x) { return bookKey(x.p); }).filter(Boolean).sort();
+    const old = trips[d.date];
+    if (!list.length) { if (old) { delete trips[d.date]; saveTrips(); } return; }
+    if (old && old.join('|') === list.join('|')) return;
+    trips[d.date] = list;
+    // Храню год, чтобы общая база не росла без конца.
+    const y = new Date(Date.now() - 366 * 86400000).toISOString().slice(0, 10);
+    Object.keys(trips).forEach(function (k) { if (k < y) delete trips[k]; });
+    saveTrips();
+  }
+  // Прошлые дни, которые остались в «Истории дня» на этом телефоне, тоже засчитываю.
+  (function () {
+    const last = {};
+    loadHist().forEach(function (x) { if (x.day && x.day.date) last[x.day.date] = x.day; });
+    Object.keys(last).forEach(function (k) { if (!trips[k]) recordTrips(last[k]); });
+  })();
 
   // Настройки газелей по датам, чтобы взять «как в прошлый раз».
   const SET_KEY = 'zubilikha_settings_v1';
@@ -530,6 +558,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
 
   function updateTop() {
+    const ub = document.getElementById('undoBtn'), u = undoStack[undoStack.length - 1];
+    ub.style.display = u && !login.need ? '' : 'none';
+    if (u) ub.textContent = '↶ Отменить ' + u.what;
     if (login.need) { document.getElementById('title').textContent = 'Газели'; document.getElementById('subtitle').textContent = ''; return; }
     document.getElementById('title').textContent = (day.place || 'Газели') + ' · ' + dateTitle();
     const active = day.people.filter(function (p) { return p.status !== 'refused'; });
@@ -782,8 +813,10 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<div id="pSearchRes" class="row">' + searchResults() + '</div></div>';
   }
 
+  let tripN = {};
   function renderPeople() {
     const stops = stopsList();
+    tripN = C.tripCounts(trips, day.date);
     let h = '<section>' + searchCard();
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
@@ -978,6 +1011,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
       (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
       (!g && !rk || g && g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
+      (tripN[bookKey(p)] ? '<span class="trips">' + C.tripsLabel(tripN[bookKey(p)]) + '</span>' : '') +
       '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
       (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
       // Телефон и «Удалить» переносятся вместе и прижаты вправо.
@@ -1207,7 +1241,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     setTimeout(function () { if (renderLater && !editing()) render(); }, 350);
   });
   function plainDay() { const d = JSON.parse(JSON.stringify(day)); delete d.example; return d; }
-  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)), tally: JSON.parse(JSON.stringify(tally)) }; }
+  function bookData() { return { book: JSON.parse(JSON.stringify(book)), marks: JSON.parse(JSON.stringify(marks)), tally: JSON.parse(JSON.stringify(tally)), trips: JSON.parse(JSON.stringify(trips)) }; }
 
   async function initSync() {
     if (!(window.claude && window.claude.use)) return;
@@ -1294,8 +1328,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!fb) return;
     await fb.auth.signOut();
     // На чужом телефоне после выхода ничего не остаётся.
-    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY, TALLY_KEY, ISSUES_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
-    day = exampleDay(); book = {}; marks = {}; tally = {}; issues = [];
+    try { [KEY, BOOK_KEY, MARKS_KEY, HIST_KEY, TALLY_KEY, TRIPS_KEY, ISSUES_KEY].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* хранилище недоступно */ }
+    day = exampleDay(); book = {}; marks = {}; tally = {}; trips = {}; issues = [];
   }
   function loginHtml() {
     if (login.checking) return '<section><div class="card"><div class="muted">Проверяю вход…</div></div></section>';
@@ -1336,15 +1370,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
 
   function onRemoteBook(snap) {
-    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length || Object.keys(tally).length) queueSync(); return; }
+    if (!snap.exists) { if (Object.keys(book).length || Object.keys(marks).length || Object.keys(tally).length || Object.keys(trips).length) queueSync(); return; }
     const d = snap.data();
     if (d.rev === sync.bookRev) return;
-    const remote = { book: d.book || {}, marks: d.marks || {}, tally: d.tally || {} };
-    const base = sync.bookBase || { book: {}, marks: {}, tally: {} };
-    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks), tally: C.mergeMap(base.tally, tally, remote.tally) };
+    const remote = { book: d.book || {}, marks: d.marks || {}, tally: d.tally || {}, trips: d.trips || {} };
+    const base = sync.bookBase || { book: {}, marks: {}, tally: {}, trips: {} };
+    const merged = { book: C.mergeMap(base.book, book, remote.book), marks: C.mergeMap(base.marks, marks, remote.marks), tally: C.mergeMap(base.tally, tally, remote.tally), trips: C.mergeMap(base.trips, trips, remote.trips) };
     const changed = JSON.stringify(merged) !== JSON.stringify(remote);
-    book = merged.book; marks = merged.marks; tally = merged.tally;
-    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally();
+    book = merged.book; marks = merged.marks; tally = merged.tally; trips = merged.trips;
+    safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally(); saveTrips();
     sync.bookBase = JSON.parse(JSON.stringify(remote));
     sync.bookRev = d.rev;
     if (changed) queueSync();
@@ -1418,7 +1452,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       if (!day.example && (!bsnap.exists || JSON.stringify(bp) !== JSON.stringify(sync.bookBase))) {
         const rev = C.uid() + C.uid();
         sync.bookRev = rev;
-        await sync.bookRef.set({ book: bp.book, marks: bp.marks, tally: bp.tally, rev: rev, by: sync.me || '', at: Date.now() });
+        await sync.bookRef.set({ book: bp.book, marks: bp.marks, tally: bp.tally, trips: bp.trips, rev: rev, by: sync.me || '', at: Date.now() });
         sync.bookBase = bp;
       }
       await pushIssues();
@@ -1452,7 +1486,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   async function bkSnapshot() {
     const ds = await sync.dayRef.get(), bs = await sync.bookRef.get(), is = await sync.issuesRef.get();
     const d = ds.exists ? ds.data() : {}, b = bs.exists ? bs.data() : {}, i = is.exists ? is.data() : {};
-    return { day: d.day || null, book: b.book || {}, marks: b.marks || {}, tally: b.tally || {}, issues: i.items || {} };
+    return { day: d.day || null, book: b.book || {}, marks: b.marks || {}, tally: b.tally || {}, trips: b.trips || {}, issues: i.items || {} };
   }
   function bkSummary(data) {
     return {
@@ -1511,8 +1545,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       keep('перед восстановлением копии');
       await bkWrite('undo', await bkSnapshot());
       if (data.day) { day = migrate(JSON.parse(JSON.stringify(data.day))); day.example = false; assignReport = null; }
-      book = data.book || {}; marks = data.marks || {}; tally = data.tally || {};
-      safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally();
+      book = data.book || {}; marks = data.marks || {}; tally = data.tally || {}; trips = data.trips || trips;
+      safeSet(BOOK_KEY, JSON.stringify(book)); safeSet(MARKS_KEY, JSON.stringify(marks)); saveTally(); saveTrips();
       const old = {}; issues.forEach(function (y) { old[y.id] = y; });
       const items = data.issues || {};
       issues = Object.keys(items).map(function (iid) {
@@ -1656,6 +1690,24 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     await offer(C.fileNames(day).excel, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
 
+  // ---------- отмена ----------
+  // Копия дня до каждого действия. Отмена возвращает только то, что поменяло это действие: правки второго человека после него остаются.
+  const UNDO_NAMES = { pGaz: 'перенос', moveAll: 'перенос', pSeat: 'перенос', sortAlpha: 'сортировку', sortAll: 'сортировку', clearAll: 'очистку газелей',
+    pDel: 'удаление', pStatus: 'статус', assign: 'раскладку', pAdd: 'добавление', parse: 'разбор', newDay: 'новый день', startOwn: 'новый день', gDel: 'удаление газели', pUp: 'перестановку', pDown: 'перестановку' };
+  function undoMark(before, act) {
+    const after = JSON.stringify(day);
+    if (after === before) return;
+    undoStack.push({ before: JSON.parse(before), after: JSON.parse(after), what: UNDO_NAMES[act] || 'правку' });
+    if (undoStack.length > 20) undoStack.shift();
+  }
+  document.getElementById('undoBtn').addEventListener('click', function () {
+    const u = undoStack.pop();
+    if (!u) return;
+    day = migrate(C.mergeDay(u.after, u.before, JSON.parse(JSON.stringify(day))));
+    pendingConfirm = null; assignReport = null;
+    save(); render();
+  });
+
   // ---------- действия ----------
   function setPath(path, value) {
     const keys = path.split('.');
@@ -1686,7 +1738,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   });
   $main.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'loginPw') doLogin(); });
   $main.addEventListener('change', function (e) {
-    const t = e.target;
+    const t = e.target, before = JSON.stringify(day);
     if (t.id === 'myName') { sync.me = t.value.trim(); safeSet(NAME_KEY, sync.me); return; }
     if (t.dataset.pf) {
       const p = person(t.dataset.id);
@@ -1697,7 +1749,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         const s = t.value.trim() ? C.findStopByText(t.value, stopsList()) : null;
         p.stop = s ? s.name : t.value.trim();
       }
-      save(); render(); return;
+      undoMark(before, 'pf'); save(); render(); return;
     }
     const act = t.dataset.act;
     if (act === 'pGaz') {
@@ -1721,7 +1773,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     }
     else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); return; }
     else return;
-    save(); render();
+    undoMark(before, act); save(); render();
   });
 
   // Плавно раскрываю только тот блок, который открыли сейчас.
@@ -1738,7 +1790,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const b = e.target.closest('[data-act]');
     if (!b || b.tagName === 'SELECT') return;
     const act = b.dataset.act, i = +b.dataset.i, id = b.dataset.id;
-    const yes = b.dataset.yes === '1';
+    const yes = b.dataset.yes === '1', before = JSON.stringify(day);
     switch (act) {
       case 'startOwn': {
         keep('перед «Начать свой день»');
@@ -1993,7 +2045,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         return;
       default: return;
     }
-    save(); render();
+    undoMark(before, act); save(); render();
   });
 
   document.getElementById('fileOpen').addEventListener('change', function (e) {

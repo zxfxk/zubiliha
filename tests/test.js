@@ -309,6 +309,23 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.ok(xml.includes('Замена цех: Пробная О Стекляшка'));
   }
 
+  // Сколько раз человек выезжал: считаются только дни до текущего.
+  {
+    const trips = { '2026-10-01': ['тестов а', 'пробова б'], '2026-10-02': ['тестов а'], '2026-10-05': ['тестов а'] };
+    assert.deepStrictEqual(C.tripCounts(trips, '2026-10-05'), { 'тестов а': 2, 'пробова б': 1 });
+    assert.deepStrictEqual([1, 2, 5, 11, 21, 22].map(C.tripsLabel), ['1 выезд', '2 выезда', '5 выездов', '11 выездов', '21 выезд', '22 выезда']);
+  }
+
+  // Отмена действия поверх чужой правки: возвращается только моё, чужое остаётся.
+  {
+    const before = C.newDay(); before.people = [{ id: 'a', surname: 'Тестов', initial: 'А', gazId: before.gazelles[0].id, status: 'ok' }, { id: 'b', surname: 'Пробова', initial: 'Б', gazId: '', status: 'ok' }];
+    const after = JSON.parse(JSON.stringify(before)); after.people = [];
+    const now = JSON.parse(JSON.stringify(after)); now.zp = 'в 18:00';
+    const back = C.mergeDay(after, before, now);
+    assert.deepStrictEqual(back.people.map((p) => p.id + p.gazId), ['a' + before.gazelles[0].id, 'b']);
+    assert.strictEqual(back.zp, 'в 18:00');
+  }
+
   // Шумные сообщения из ВК (выдуманные фамилии, написание как в настоящих чатах).
   {
     const stops = C.parseStops(C.DEFAULT_STOPS);
