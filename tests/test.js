@@ -286,6 +286,29 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
     assert.deepStrictEqual(C.parseTally(t.text, '2026-10'), { '2026-10-01': { d: 1, m: 1 }, '2026-10-11': { d: 1, m: 2 } });
   }
 
+  // Замена: отдельные списки людей с остановкой; в Word — «Фамилия И Остановка», в газели и предупреждения не попадают.
+  {
+    const stops = C.parseStops(C.DEFAULT_STOPS);
+    const d = C.newDay(); d.people = []; d.date = '2026-10-12';
+    d.replaceField = 'Выдумкин П рынок, Сочинова Е'; d.replaceShop = '-';
+    C.migrateReplace(d, stops);
+    assert.strictEqual(d.replaceField, '-');
+    assert.deepStrictEqual(d.people.map((p) => [C.personLabel(p), p.stop, p.reserve, p.gazId].join('|')), ['Выдумкин П|Рынок|поле|', 'Сочинова Е||поле|']);
+    const again = C.newDay(); again.people = []; again.replaceField = 'Выдумкин П рынок, Сочинова Е';
+    C.migrateReplace(again, stops);
+    assert.deepStrictEqual(again.people.map((p) => p.id), d.people.map((p) => p.id), 'одинаковые id на двух телефонах');
+    d.people.push({ id: 'z1', surname: 'Пробная', initial: 'О', stop: 'Стекляшка', kind: 'цех', status: 'ok', gazId: '', reserve: 'цех' });
+    d.people.push({ id: 'z2', surname: 'Отказова', initial: 'Н', stop: 'Рынок', kind: 'цех', status: 'refused', gazId: '', reserve: 'цех' });
+    assert.strictEqual(C.reserveText(d, 'поле'), 'Выдумкин П Рынок, Сочинова Е');
+    assert.strictEqual(C.reserveText(d, 'цех'), 'Пробная О Стекляшка');
+    assert.ok(!C.warnings(d).some((w) => /Без газели/.test(w)));
+    C.autoAssign(d, stops, 'all');
+    assert.ok(d.people.every((p) => !p.gazId), 'раскладка не трогает замену');
+    const xml = await (await JSZip.loadAsync(await D.Packer.toBuffer(Gen.buildWord(d, D)))).file('word/document.xml').async('string');
+    assert.ok(xml.includes('Замена поле: Выдумкин П Рынок, Сочинова Е'));
+    assert.ok(xml.includes('Замена цех: Пробная О Стекляшка'));
+  }
+
   // Шумные сообщения из ВК (выдуманные фамилии, написание как в настоящих чатах).
   {
     const stops = C.parseStops(C.DEFAULT_STOPS);

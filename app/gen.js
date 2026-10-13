@@ -126,8 +126,8 @@
     // Нижний блок на всю ширину.
     const C = { alignment: AlignmentType.CENTER };
     const foot = [
-      para([run('Замена поле: ' + (String(day.replaceField || '').trim() || '-'), { size: 20, bold: true, color: RED })], C),
-      para([run('Замена цех: ' + (String(day.replaceShop || '').trim() || '-'), { size: 20, bold: true, color: RED })], C),
+      para([run('Замена поле: ' + Core.reserveText(day, 'поле'), { size: 20, bold: true, color: RED })], C),
+      para([run('Замена цех: ' + Core.reserveText(day, 'цех'), { size: 20, bold: true, color: RED })], C),
       para([run('!!', { size: 20, bold: true, color: RED }), run('ЗП поле/цех прошу получить/выдать – ' + String(day.zp || '').trim(), { size: 20 })], C),
     ];
     if (String(day.footer || '').trim()) foot.push(para([run(String(day.footer).trim(), { size: 20, italics: true })], C));
