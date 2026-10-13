@@ -545,12 +545,26 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     // Карточки плавно появляются только при смене вкладки; обычная перерисовка после нажатия идёт без анимации.
     const entering = shownTab !== tab;
     shownTab = tab;
+    // Раскрытые блоки («История дня», «Время, оплата, работа»…) остаются раскрытыми после перерисовки.
+    const opened = entering ? [] : detailsKeys().filter(function (x) { return x.d.open; }).map(function (x) { return x.k; });
     $main.classList.remove('enter');
     $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
+    detailsKeys().forEach(function (x) { if (!x.d.open && opened.indexOf(x.k) >= 0) { x.d.dataset.kept = '1'; x.d.open = true; } });
     flashIds.clear();
     if (entering) { void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
+  }
+
+  // Ключ блока — заголовок без цифр и скобок плюс номер среди одинаковых: «Время, оплата, работа#1».
+  function detailsKeys() {
+    const seen = {};
+    return Array.prototype.map.call($main.querySelectorAll('details'), function (d) {
+      const s = d.querySelector('summary');
+      const t = s ? s.textContent.replace(/\([^)]*\)|\d/g, '').trim() : '';
+      seen[t] = (seen[t] || 0) + 1;
+      return { d: d, k: t + '#' + seen[t] };
+    });
   }
 
   function exampleBanner() {
@@ -1644,6 +1658,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const d = e.target;
     if (d.id === 'tallyDays') tallyOpen = d.open;
     if (d.tagName !== 'DETAILS' || !d.open) return;
+    if (d.dataset.kept) { delete d.dataset.kept; return; }
     d.classList.add('opening');
     setTimeout(function () { d.classList.remove('opening'); }, 400);
   }, true);
