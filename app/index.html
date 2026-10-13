@@ -783,7 +783,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
         seatHint(x.g, n, cap, stops) +
-        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button></div>' : '') +
+        (n > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '">По алфавиту</button><button class="btn small" data-act="sortAlpha" data-g="' + x.g.id + '" data-v="stop">По остановкам</button></div>' : '') +
         x.list.map(function (p, i) {
           let label = '';
           if (x.g.kind === 'Цех/поле') {
@@ -1796,7 +1796,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         break;
       }
       case 'gAddCar': { const g = C.newGazelle(); g.vehicle = 'машина'; g.capacity = 5; g.fuel = '1000'; day.gazelles.push(g); break; }
-      case 'sortAlpha': C.sortAlpha(day, b.dataset.g); break;
+      case 'sortAlpha': C.sortAlpha(day, b.dataset.g, b.dataset.v); break;
       case 'sortAll': C.sortAll(day, b.dataset.v); break;
       case 'login': doLogin(); return;
       case 'logout': await doLogout(); render(); return;

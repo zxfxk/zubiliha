@@ -137,6 +137,9 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
   assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Без', 'Ахов', 'Бобров', 'Алов']);
   C.sortAll(d3, 'name');
   assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Алов', 'Ахов', 'Без', 'Бобров']);
+  // По остановкам в одной газели.
+  C.sortAlpha(d3, g3.id, 'stop');
+  assert.deepStrictEqual(d3.people.map((p) => p.surname), ['Без', 'Ахов', 'Бобров', 'Алов']);
 
   C.sortAlpha(d2, mix.id);
   assert.deepStrictEqual(d2.people.filter((p) => p.gazId === mix.id).map((p) => p.surname), ['Поляков', 'Цехова', 'Яковлев']);
