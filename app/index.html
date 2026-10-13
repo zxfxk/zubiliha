@@ -63,6 +63,9 @@ input, select, textarea {
   border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
 }
 textarea { min-height: 120px; resize: vertical; }
+/* На айфоне поле даты своё: без этого оно шире колонки и съезжает. */
+input[type="date"] { -webkit-appearance: none; appearance: none; display: block; height: calc(1.3em + 20px); text-align: left; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn {
   font: 600 15px var(--body); border-radius: 8px; padding: 11px 14px; border: 1px solid var(--line);
@@ -553,6 +556,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     $main.dataset.tab = tab;
     $main.innerHTML = (day.example ? exampleBanner() : '') + html;
     detailsKeys().forEach(function (x) { if (!x.d.open && opened.indexOf(x.k) >= 0) { x.d.dataset.kept = '1'; x.d.open = true; } });
+    // Если таблица Word не влезла по ширине, говорю, что её можно листать: иначе кажется, что она обрезана.
+    const pv = $main.querySelector('.preview'), hint = document.getElementById('scrollHint');
+    if (pv && hint) hint.hidden = pv.scrollWidth <= pv.clientWidth;
     flashIds.clear();
     if (entering) { void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
@@ -1042,6 +1048,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<button class="btn" data-act="shotCopy">Скопировать картинкой</button>' +
       (canShareFiles() ? '<button class="btn" data-act="shotShare">Отправить картинкой</button>' : '<button class="btn" data-act="shotSave">Сохранить картинку</button>') +
       '</div><div id="shotMsg" class="muted" role="status"></div>' +
+      '<div class="muted" id="scrollHint" hidden>Таблица шире экрана: листайте её вправо →</div>' +
       '<div class="preview">' + previewHtml() + '</div></div>' +
       '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
       '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
