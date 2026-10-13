@@ -107,6 +107,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .issue { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px; }
 .issue:first-of-type { border-top: 0; padding-top: 0; }
 .issue img, .shot img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); justify-self: start; }
+.morebox > summary { font-weight: 600; padding: 14px 4px; cursor: pointer; }
+nav.tabs button[data-badge]::after { content: attr(data-badge); display: inline-block; margin-left: 4px; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 11px; }
 .trips { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
 .phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -259,6 +261,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   let day = load() || exampleDay();
   let tab = safeGet(TAB_KEY) || 'people';
   const openRows = new Set();
+  const moreRows = new Set(); // строки людей, где открыты редкие кнопки (⋯)
   // Строки, которые только что добавили, переложили или нашли поиском: подсвечиваются и плавно гаснут.
   // Помню время начала, чтобы перерисовка не обрывала подсветку, а продолжала её с того же места.
   const flashAt = {};
@@ -561,6 +564,12 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const ub = document.getElementById('undoBtn'), u = undoStack[undoStack.length - 1];
     ub.style.display = u && !login.need ? '' : 'none';
     if (u) ub.textContent = '↶ Отменить ' + u.what;
+    // На вкладках — сколько там осталось сделать.
+    const none = day.example ? 0 : day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; }).length;
+    const badges = { gaz: day.example || !day.people.length ? 0 : noNumber().length, people: none };
+    document.querySelectorAll('#tabs button').forEach(function (b) {
+      if (badges[b.dataset.tab]) b.dataset.badge = badges[b.dataset.tab]; else delete b.dataset.badge;
+    });
     if (login.need) { document.getElementById('title').textContent = 'Газели'; document.getElementById('subtitle').textContent = ''; return; }
     document.getElementById('title').textContent = (day.place || 'Газели') + ' · ' + dateTitle();
     const active = day.people.filter(function (p) { return p.status !== 'refused'; });
@@ -622,6 +631,34 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     });
   }
 
+  // Внизу вкладок: что ещё не сделано и кнопка на следующую вкладку. По вкладкам можно ходить и как раньше.
+  function nextCard(items, to) {
+    return '<div class="card next">' + (items.length ? '<div class="muted">Осталось: ' + items.map(esc).join('<br>') + '</div>' : '') +
+      '<div class="row"><button class="btn primary" data-act="goTab" data-v="' + to + '">Дальше: ' + TAB_NAMES[to] + ' →</button></div></div>';
+  }
+  function noNumber() {
+    return day.gazelles.filter(function (g) { return !String(g.number).trim() && !String(g.carName || '').trim(); })
+      .map(function (g) { return gTitle(g) + ': нет номера'; });
+  }
+  function isoDate(d) { return d.getFullYear() + '-' + C.pad2(d.getMonth() + 1) + '-' + C.pad2(d.getDate()); }
+  // Ближайший день, на который ещё собирают список: до полудня — сегодня, после — завтра.
+  function soonest() { const n = new Date(); return isoDate(new Date(n.getFullYear(), n.getMonth(), n.getDate() + (n.getHours() >= 12 ? 1 : 0))); }
+  // Следующий день: дата +1, но не раньше ближайшего.
+  function nextDate() {
+    const dp = C.dateParts(day.date), s = soonest();
+    const nd = dp ? isoDate(new Date(dp.y, dp.m - 1, dp.d + 1)) : s;
+    return nd < s ? s : nd;
+  }
+  // Выезд уже прошёл (или он сегодня, а уже вторая половина дня): одной кнопкой начать следующий день.
+  function dayDoneBanner() {
+    if (day.example || !/^\d{4}-\d{2}-\d{2}$/.test(day.date || '') || day.date >= soonest()) return '';
+    const today = isoDate(new Date());
+    const nd = C.dateParts(nextDate());
+    return '<div class="banner"><div>Выезд ' + esc(dateShort()) + (day.date < today ? ' прошёл' : ' сегодня') + '. Начать список на ' + C.pad2(nd.d) + '.' + C.pad2(nd.m) +
+      '? Люди очистятся, газели и настройки останутся. Можно отменить.</div>' +
+      '<div class="row"><button class="btn primary" data-act="newDay" data-yes="1">Начать ' + C.pad2(nd.d) + '.' + C.pad2(nd.m) + '</button></div></div>';
+  }
+
   function exampleBanner() {
     return '<section><div class="banner"><div>Сейчас открыт <b>пример с выдуманными фамилиями</b>, чтобы было видно, как всё работает.</div>' +
       '<div class="row"><button class="btn primary" data-act="startOwn">Начать свой день</button></div></div></section>';
@@ -633,7 +670,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
   function renderDay() {
     const d = day.defaults;
-    return '<section>' +
+    return '<section>' + dayDoneBanner() +
       '<div class="card"><h2>День</h2>' +
       '<div class="grid2">' +
       '<label class="datecat">Дата выезда<input type="date" data-path="date" value="' + esc(day.date) + '">' +
@@ -644,10 +681,6 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         ? '<div class="row"><label class="grow">Бригадир (в Excel и именах файлов)<input data-path="brigadier" value="' + esc(day.brigadier) + '" autocomplete="off"></label>' +
           '<button class="btn small" data-act="brigDel" style="align-self:end">Убрать</button></div>'
         : '<div class="row"><button class="btn small" data-act="brigAdd">Добавить бригадира</button></div>') +
-      '<div class="row"><span class="muted">Тема</span><div class="seg" role="group" aria-label="Тема">' +
-      [['auto', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(function (t) {
-        return '<button data-act="theme" data-v="' + t[0] + '" aria-pressed="' + (theme === t[0]) + '">' + t[1] + '</button>';
-      }).join('') + '</div></div>' +
       '</div>' +
       '<div class="card"><h2>Для всех газелей</h2><div class="muted">В карточке газели можно поменять для неё отдельно.</div>' +
       '<div class="grid3">' +
@@ -661,14 +694,20 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       field('Напоминание (красным)', 'defaults.reminder', d.reminder) +
       '</div>' +
 
-      syncCard() +
-      dayFileCard() + historyCard() + bkCard() +
+      dayFileCard() + nextCard([], 'gaz') +
+      // Редкое свёрнуто сюда: вход, копии, справочник, тема.
+      '<details class="morebox"><summary>Ещё: вход, копии, справочник остановок, тема</summary>' +
+      syncCard() + historyCard() + bkCard() +
       '<div class="card"><details><summary>Справочник остановок</summary>' +
       '<p class="muted">Одна строка — одна остановка. Первое слово — как писать в файле, дальше через запятую варианты из ВК. Строка с # — начало зоны: по зонам раскладываются газели. Зона, где в названии есть «деревни» или «любую», идёт в любую газель. Порядок строк — порядок маршрута и сводки.</p>' +
       '<textarea data-path="stopsText" rows="16" spellcheck="false">' + esc(day.stopsText) + '</textarea>' +
       '<label class="row" style="display:flex"><input type="checkbox" data-path="latinNames" style="width:auto" ' + (day.latinNames ? 'checked' : '') + '> Имена файлов латиницей</label>' +
       '</details></div>' +
-      '</section>';
+      '<div class="card"><div class="row"><span class="muted">Тема</span><div class="seg" role="group" aria-label="Тема">' +
+      [['auto', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(function (t) {
+        return '<button data-act="theme" data-v="' + t[0] + '" aria-pressed="' + (theme === t[0]) + '">' + t[1] + '</button>';
+      }).join('') + '</div></div></div>' +
+      '</details></section>';
   }
 
   // Когда день общий, файл не нужен: остаётся «Новый день» и мелкая резервная копия.
@@ -788,7 +827,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     h += '<div class="card"><h2>Низ таблицы</h2>' +
       field('ЗП поле/цех прошу получить/выдать –', 'zp', day.zp) +
       field('Приписка (курсивом)', 'footer', day.footer) +
-      '</div></section>';
+      '</div>' + nextCard(noNumber(), 'people') + '</section>';
     return h;
   }
 
@@ -817,7 +856,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function renderPeople() {
     const stops = stopsList();
     tripN = C.tripCounts(trips, day.date);
-    let h = '<section>' + searchCard();
+    let h = '<section>' + dayDoneBanner() + searchCard();
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
       '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
@@ -828,6 +867,11 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const groups = day.gazelles.map(function (g) { return { g: g, list: C.peopleOf(day, g) }; });
     const none = day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; });
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
+    // Сразу после разбора: что делать с теми, кому не хватило места, без прокрутки вниз.
+    if (parseReport && none.length) {
+      h += '<div class="card"><div class="row"><b class="grow">Без газели: ' + none.length + ' чел.</b>' +
+        '<button class="btn small" data-act="toReserve">В замену</button><button class="btn small" data-act="gAddAssign">Добавить газель и разложить</button></div></div>';
+    }
 
     if (day.people.some(function (p) { return p.status !== 'refused'; })) h += assignCard(none.length);
     h += sortCard();
@@ -879,6 +923,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       h += '<div class="card"><details><summary>Отказались (' + refused.length + ')</summary><div style="display:grid;gap:10px;margin-top:10px">' +
         refused.map(function (p, i) { return personRow(p, i + 1); }).join('') + '</div></details></div>';
     }
+    if (day.people.length) h += nextCard(C.warnings(day), 'files');
     h += '<datalist id="stopNames">' + stops.map(function (s) { return '<option value="' + esc(s.name) + '">'; }).join('') + '</datalist>';
     return h + '</section>';
   }
@@ -887,8 +932,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function sortCard() {
     if (!day.people.length) return '';
     const seated = day.people.some(function (p) { return p.gazId && p.status !== 'refused'; });
-    // «Очистить все газели» стоит отдельно в правом верхнем углу, подальше от сортировки.
-    return '<div class="card"><div class="sorthead"><div class="muted">' + (seated ? 'Порядок людей в Word, во всех газелях' : '') + '</div>' +
+    // Нужно редко, поэтому свёрнуто. «Очистить все газели» стоит отдельно в правом верхнем углу, подальше от сортировки.
+    return '<div class="card"><details' + (pendingConfirm === 'clearAll' ? ' open' : '') + '><summary>Сортировка и очистка</summary><div class="sorthead"><div class="muted">' + (seated ? 'Порядок людей в Word, во всех газелях' : '') + '</div>' +
       (pendingConfirm === 'clearAll' ? '' : '<button class="btn small danger" data-act="clearAll">Очистить все газели</button>') + '</div>' +
       (pendingConfirm === 'clearAll'
         ? '<div class="note">Убрать всех людей (' + day.people.length + ') из газелей и из «Без газели»?' + (sync.on ? ' Список очистится у обоих.' : '') + ' Газели, дата и настройки останутся. Копия сохранится в «Истории дня» на вкладке «День».</div>' +
@@ -897,7 +942,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       (seated && pendingConfirm !== 'clearAll' ? '<div class="row">' +
       '<button class="btn small" data-act="sortAll" data-v="name">Сортировать по фамилиям</button>' +
       '<button class="btn small" data-act="sortAll" data-v="stop">Сортировать по остановкам</button></div>' : '') +
-      '</div>';
+      '</details></div>';
   }
 
   // Карточка автораспределения по зонам из справочника остановок.
@@ -993,6 +1038,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const g = gById(p.gazId);
     const inCar = !!g && g.vehicle === 'машина';
     const rk = C.reserveKind(p);
+    const more = moreRows.has(p.id) || pendingConfirm === 'pDel' + p.id;
     return '<div class="person ' + st + flashAttr(p.id) + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
@@ -1006,20 +1052,25 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       [['ok', 'Едет'], ['noshow', 'Не вышел'], ['refused', 'Отказ']].map(function (s) {
         return '<button class="st-' + s[0] + '" data-act="pStatus" data-id="' + p.id + '" data-v="' + s[0] + '" aria-pressed="' + (st === s[0]) + '">' + s[1] + '</button>';
       }).join('') + '</div>' +
-      '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
-      '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
-      // Водитель — только в машине; поле/цех — только в сборной газели и у тех, кто пока без газели.
-      (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
-      (!g && !rk || g && g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
       (tripN[bookKey(p)] ? '<span class="trips">' + C.tripsLabel(tripN[bookKey(p)]) + '</span>' : '') +
-      '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
-      (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
-      // Телефон и «Удалить» переносятся вместе и прижаты вправо.
+      // Водитель — только в машине.
+      (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
+      (isFlaky(p) && !more ? '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="true">✓ часто не выходит</button>' : '') +
       '<span class="ptail">' + phoneInline(p) +
-      (pendingConfirm === 'pDel' + p.id
-        ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
-        : '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button>') +
-      '</span></div>' +
+      '<button class="iconbtn" data-act="pMore" data-id="' + p.id + '" aria-expanded="' + more + '" aria-label="Ещё" title="Ещё">⋯</button></span></div>' +
+      // Редкое — по «⋯»: порядок, поле/цех, метка, телефон, удаление.
+      (more ? '<div class="line2">' +
+        '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
+        '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
+        // Поле/цех — только в сборной газели и у тех, кто пока без газели.
+        (!g && !rk || g && g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
+        '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
+        (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
+        '<span class="ptail">' +
+        (pendingConfirm === 'pDel' + p.id
+          ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
+          : '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '">Удалить</button>') +
+        '</span></div>' : '') +
       (openRows.has(p.id)
         ? '<div class="more"><input type="tel" class="pphone" data-pf="phone" data-id="' + p.id + '" value="' + esc(p.phone || '') + '" placeholder="Телефон" aria-label="Телефон" autocomplete="off"></div>'
         : '') +
@@ -1160,7 +1211,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         (v.manual ? '<span class="muted">поправлено</span>' : '') +
         '<button class="btn small" data-act="tallyDel" data-k="' + k + '" aria-label="Убрать день">✕</button></div>';
     }).join('');
-    return '<div class="card"><h2>Газели за месяц</h2>' +
+    return '<div class="card"><details><summary>Газели за месяц</summary>' +
       '<div class="row tmonth"><button class="btn small" data-act="tallyMonth" data-v="-1" aria-label="Прошлый месяц">‹</button><b>' + esc(title.charAt(0).toUpperCase() + title.slice(1)) + ' ' + p[0] + '</b><button class="btn small" data-act="tallyMonth" data-v="1" aria-label="Следующий месяц">›</button></div>' +
       '<div class="muted">Сколько газелей с людьми было у Димы (Д) и у Миши (М). День записывается сам, пока его не поправили руками. Машины и «заявки нет» не считаются.</div>' +
       (rows ? '<details id="tallyDays" class="backup"' + (tallyOpen ? ' open' : '') + '><summary>Дни (' + t.keys.length + ')</summary>' + rows + '</details>' : '<div class="muted">В этом месяце пока пусто.</div>') +
@@ -1170,7 +1221,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       '<div class="muted">Строки вида «1- 1 Д/1м». Строка с названием месяца («Октябрь:») задаёт месяц, иначе берётся показанный. Эти дни заменятся.</div>' +
       '<textarea id="tallyPaste" rows="6" spellcheck="false" placeholder="Октябрь:&#10;1- 1 Д/1м&#10;2- 1 Д/1м"></textarea>' +
       '<div class="row"><button class="btn" data-act="tallyPaste">Внести</button></div></details>' +
-      '<div id="tallyMsg" class="muted" role="status">' + esc(tallyNote) + '</div></div>';
+      '<div id="tallyMsg" class="muted" role="status">' + esc(tallyNote) + '</div></details></div>';
   }
 
   function previewHtml() {
@@ -1693,7 +1744,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   // ---------- отмена ----------
   // Копия дня до каждого действия. Отмена возвращает только то, что поменяло это действие: правки второго человека после него остаются.
   const UNDO_NAMES = { pGaz: 'перенос', moveAll: 'перенос', pSeat: 'перенос', sortAlpha: 'сортировку', sortAll: 'сортировку', clearAll: 'очистку газелей',
-    pDel: 'удаление', pStatus: 'статус', assign: 'раскладку', pAdd: 'добавление', parse: 'разбор', newDay: 'новый день', startOwn: 'новый день', gDel: 'удаление газели', pUp: 'перестановку', pDown: 'перестановку' };
+    pDel: 'удаление', pStatus: 'статус', assign: 'раскладку', pAdd: 'добавление', parse: 'разбор', newDay: 'новый день', startOwn: 'новый день', gDel: 'удаление газели', pUp: 'перестановку', pDown: 'перестановку', toReserve: 'перенос', gAddAssign: 'раскладку' };
   function undoMark(before, act) {
     const after = JSON.stringify(day);
     if (after === before) return;
@@ -1849,8 +1900,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         pendingConfirm = null;
         keep('перед «Новый день»');
         day.people = []; day.example = false; assignReport = null;
-        { const dp = C.dateParts(day.date); const nd = dp ? new Date(dp.y, dp.m - 1, dp.d + 1) : new Date(Date.now() + 86400000);
-          day.date = nd.getFullYear() + '-' + C.pad2(nd.getMonth() + 1) + '-' + C.pad2(nd.getDate()); }
+        day.date = nextDate();
         day.gazelles.forEach(function (g) { g.contact = ''; });
         day.zp = ''; day.replaceField = '-'; day.replaceShop = '-';
         break;
@@ -1929,6 +1979,22 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         pendingConfirm = null;
         if (mode === 'all') keep('перед «Разложить всех заново»');
         assignReport = assignSummary(C.autoAssign(day, stopsList(), mode));
+        break;
+      }
+      case 'pMore': if (moreRows.has(id)) moreRows.delete(id); else moreRows.add(id); render(); return;
+      case 'goTab': tab = b.dataset.v; safeSet(TAB_KEY, tab); pendingConfirm = null; render(); window.scrollTo(0, 0); return;
+      case 'toReserve':
+        day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; })
+          .forEach(function (p) { p.reserve = p.kind === 'цех' ? 'цех' : 'поле'; });
+        break;
+      case 'gAddAssign': {
+        // Цех без цеховой газели — новая газель сборная, иначе полевая.
+        const none = day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; });
+        const shopVan = day.gazelles.some(function (g) { return g.vehicle !== 'машина' && (g.kind === 'Цех' || g.kind === 'Цех/поле'); });
+        const g = C.newGazelle();
+        if (none.some(function (p) { return p.kind === 'цех'; }) && !shopVan) g.kind = 'Цех/поле';
+        day.gazelles.push(g);
+        assignReport = assignSummary(C.autoAssign(day, stopsList(), 'free'));
         break;
       }
       case 'pKind': { const p = person(id); p.kind = p.kind === 'цех' ? 'поле' : 'цех'; break; }
