@@ -180,23 +180,23 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
 .datecat { position: relative; }
 .kot { position: absolute; right: 6px; bottom: 33px; width: 72px; height: auto; pointer-events: none; z-index: 1; filter: drop-shadow(0 2px 3px rgb(0 0 0 / .25)); }
 @media (min-width: 1000px) { .kot { width: 100px; right: 44px; bottom: 34px; } }
-/* Анимации: короткие, только если в системе не выключено движение. */
+/* Анимации: плавные, только если в системе не выключено движение. */
 @media (prefers-reduced-motion: no-preference) {
-  .btn, .seg button, .chip, .iconbtn, nav.tabs button { transition: background-color .15s, color .15s, box-shadow .15s, transform .12s; }
-  .btn:active, .chip:active, .iconbtn:active, .seg button:active { transform: scale(.96); }
-  nav.tabs button:active { transform: scale(.94); }
-  main.enter .card, main.enter .banner { animation: rise .38s var(--ease) both; }
-  main.enter section > :nth-child(2) { animation-delay: .04s; }
-  main.enter section > :nth-child(3) { animation-delay: .08s; }
-  main.enter section > :nth-child(4) { animation-delay: .12s; }
-  main.enter section > :nth-child(n+5) { animation-delay: .16s; }
+  .btn, .seg button, .chip, .iconbtn, nav.tabs button { transition: background-color .25s, color .25s, box-shadow .25s, transform .2s; }
+  .btn:active, .chip:active, .iconbtn:active, .seg button:active { transform: scale(.97); }
+  nav.tabs button:active { transform: scale(.96); }
+  main.enter .card, main.enter .banner { animation: rise .6s var(--ease) both; }
+  main.enter section > :nth-child(2) { animation-delay: .06s; }
+  main.enter section > :nth-child(3) { animation-delay: .12s; }
+  main.enter section > :nth-child(4) { animation-delay: .18s; }
+  main.enter section > :nth-child(n+5) { animation-delay: .24s; }
   .person.flash { animation: flash 3.5s linear; }
-  .more .pphone { animation: fadein .28s var(--ease) both; }
-  details.opening > :not(summary) { animation: rise .3s var(--ease) both; }
-  main.enter .kot { animation: kotIn .5s cubic-bezier(.34, 1.56, .64, 1) .1s both; }
-  input, select, textarea { transition: border-color .15s, background-color .15s; }
+  .more .pphone { animation: fadein .45s var(--ease) both; }
+  details.opening > :not(summary) { animation: rise .5s var(--ease) both; }
+  main.enter .kot { animation: kotIn .8s cubic-bezier(.34, 1.4, .64, 1) .15s both; }
+  input, select, textarea { transition: border-color .25s, background-color .25s; }
 }
-@keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
 @keyframes fadein { from { opacity: 0; transform: translateY(-4px); } }
 :root { --ease: cubic-bezier(.16, 1, .3, 1); }
 @keyframes flash { 0%, 20% { background: var(--warn-bg); box-shadow: 0 0 0 6px var(--warn-bg); } }
@@ -256,7 +256,18 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   let day = load() || exampleDay();
   let tab = safeGet(TAB_KEY) || 'people';
   const openRows = new Set();
-  const flashIds = new Set(); // строки, которые только что добавили или переложили: мягко подсвечиваются
+  // Строки, которые только что добавили, переложили или нашли поиском: подсвечиваются и плавно гаснут.
+  // Помню время начала, чтобы перерисовка не обрывала подсветку, а продолжала её с того же места.
+  const flashAt = {};
+  const FLASH_MS = { flash: 3500, found: 4000 };
+  function flash(id, cls, delay) { flashAt[id] = { t: Date.now() + (delay || 0), cls: cls || 'flash' }; }
+  function flashAttr(id) {
+    const f = flashAt[id];
+    if (!f) return '';
+    const age = Date.now() - f.t;
+    if (age >= FLASH_MS[f.cls]) { delete flashAt[id]; return ''; }
+    return ' ' + f.cls + '" style="animation-delay:' + (-age) + 'ms';
+  }
   let shownTab = null;
   let parseReport = null;
   let assignReport = null;
@@ -562,7 +573,6 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     // Если таблица Word не влезла по ширине, говорю, что её можно листать: иначе кажется, что она обрезана.
     const pv = $main.querySelector('.preview'), hint = document.getElementById('scrollHint');
     if (pv && hint) hint.hidden = pv.scrollWidth <= pv.clientWidth;
-    flashIds.clear();
     if (entering) { void $main.offsetWidth; $main.classList.add('enter'); }
     updateTop();
   }
@@ -937,7 +947,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const st = p.status || 'ok';
     const g = gById(p.gazId);
     const inCar = !!g && g.vehicle === 'машина';
-    return '<div class="person ' + st + (flashIds.has(p.id) ? ' flash' : '') + '" data-id="' + p.id + '">' +
+    return '<div class="person ' + st + flashAttr(p.id) + '" data-id="' + p.id + '">' +
       '<div class="line1"><span class="num">' + n + '</span>' +
       '<input class="pname" data-pf="name" data-id="' + p.id + '" value="' + esc(C.personLabel(p)) + '" aria-label="Фамилия И" autocomplete="off">' +
       '<input class="pstop" data-pf="stop" data-id="' + p.id + '" value="' + esc(p.stop) + '" list="stopNames" aria-label="Остановка" autocomplete="off">' +
@@ -1683,7 +1693,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       day[k] = (cur && cur !== '-' ? cur + ', ' : '') + C.personLabel(p);
       day.people = day.people.filter(function (x) { return x !== p; });
     }
-    else if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flashIds.add(p.id); }
+    else if (act === 'pGaz') { const p = person(t.dataset.id); p.gazId = t.value; toEnd(p); flash(p.id); }
     else if (act === 'moveAll' && t.value) {
       day.people.filter(function (p) { return !gById(p.gazId) && p.status !== 'refused'; }).forEach(function (p) { p.gazId = t.value; toEnd(p); });
     }
@@ -1705,7 +1715,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (d.tagName !== 'DETAILS' || !d.open) return;
     if (d.dataset.kept) { delete d.dataset.kept; return; }
     d.classList.add('opening');
-    setTimeout(function () { d.classList.remove('opening'); }, 400);
+    setTimeout(function () { d.classList.remove('opening'); }, 600);
   }, true);
 
   $main.addEventListener('click', async function (e) {
@@ -1838,6 +1848,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         const dt = el.closest('details'); if (dt) dt.open = true;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         // Подсвечиваю, когда прокрутка почти доехала, иначе вспышку не видно.
+        flash(id, 'found', 450);
         el.classList.remove('found'); setTimeout(function () { el.classList.add('found'); }, 450);
         return;
       }
@@ -1904,7 +1915,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           const np = { id: C.uid(), surname: x.surname, initial: x.initial, stop: x.stop, kind: x.kind, phone: x.phone || '', gazId: '', status: 'ok', flags: x.flags, raw: x.raw };
           if (np.phone) rememberPhone(np); else fillPhone(np);
           day.people.push(np);
-          flashIds.add(np.id);
+          flash(np.id);
           added++;
         });
         // Новых сразу раскладываю по газелям; кто уже сидит в газели — не трогаю.
@@ -1952,7 +1963,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }
       case 'pSeat': {
         const p = person(id);
-        p.gazId = b.dataset.g; toEnd(p); flashIds.add(p.id);
+        p.gazId = b.dataset.g; toEnd(p); flash(p.id);
         break;
       }
       case 'shotCopy':
