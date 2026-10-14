@@ -263,7 +263,13 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
       'Примерова|А|Стекляшка|цех|true',
       'Сидоров|В|Рынок|поле|false',
     ]);
-    assert.deepStrictEqual(r.skipped.map(function (x) { return x.reason; }), ['другая дата']);
+    assert.deepStrictEqual(r.skipped.map(function (x) { return x.raw + ' | ' + x.reason + (x.date ? ' ' + x.date : ''); }), [
+      'Оля Н завтра буду | нет даты, остановки и поле/цех',
+      '13.10 Другов Г Рынок | другая дата 13.10',
+    ]);
+    // Непонятная дата и строка без фамилии тоже попадают в пропущенные.
+    const r2 = C.parseVk('45.10 Сидоров В Рынок поле\n12.10 рынок поле', 12, 10, stops);
+    assert.deepStrictEqual(r2.skipped.map((x) => x.reason), ['непонятная дата', 'не найдена фамилия']);
   }
 
   // Цех без заявки: люди серым в Word, в Excel и подсчёт не идут. Подсчёт газелей Димы и Миши.

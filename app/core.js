@@ -183,11 +183,11 @@
       let undated = false;
       if (m) {
         const d = +m[1], mo = +m[2];
-        if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
-        if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
+        if (mo < 1 || mo > 12 || d < 1 || d > 31) { skipped.push({ raw: line, reason: 'непонятная дата' }); return; }
+        if (d !== day || mo !== month) { skipped.push({ raw: line, reason: 'другая дата', date: pad2(d) + '.' + pad2(mo) }); return; }
         body = m[3];
       } else if (mm && +mm[3] >= 1 && +mm[3] <= 12 && +mm[2] >= 1 && +mm[2] <= 31) {
-        if (+mm[2] !== day || +mm[3] !== month) { skipped.push({ raw: line, reason: 'другая дата' }); return; }
+        if (+mm[2] !== day || +mm[3] !== month) { skipped.push({ raw: line, reason: 'другая дата', date: pad2(+mm[2]) + '.' + pad2(+mm[3]) }); return; }
         body = line.slice(0, mm.index) + mm[1] + ' ' + line.slice(mm.index + mm[0].length);
       } else {
         // Без даты берём только строки вида «Фамилия И остановка [цех]»; имена авторов, время и «(ред.)» пропускаем.
@@ -266,7 +266,7 @@
       if (!persons.length) { if (!undated) skipped.push({ raw: line, reason: 'не найдена фамилия' }); return; }
       if (undated) {
         // Без даты и без остановки/цеха это скорее не запись, а просто сообщение.
-        if (!sm && !kindGiven) return;
+        if (!sm && !kindGiven) { skipped.push({ raw: line, reason: 'нет даты, остановки и поле/цех' }); return; }
         flags.unshift('без даты');
       }
       if (!stopName) {
