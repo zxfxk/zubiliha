@@ -109,6 +109,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .issue img, .shot img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--line); justify-self: start; }
 .morebox > summary { font-weight: 600; padding: 14px 4px; cursor: pointer; }
 nav.tabs button[data-badge]::after { content: attr(data-badge); display: inline-block; margin-left: 4px; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 11px; }
+.skipped { margin: 4px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
 .trips { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; font: 600 12px var(--body); padding: 6px 10px; }
 .phone { padding-left: 30px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -2056,14 +2057,14 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         }
         if (added) vkDraft = '';
         const flagged = r.people.filter(function (x) { return x.flags.length; }).length;
-        const other = r.skipped.filter(function (s) { return s.reason === 'другая дата'; }).length;
-        const bad = r.skipped.filter(function (s) { return s.reason !== 'другая дата'; });
         parseReport = '<div class="note">Добавлено: ' + added + '. ' + placedNote +
           (diff.length ? '<br><b>⚠ Уже в списке, но с другой остановкой:</b> ' + esc(diff.join('; ')) + '. Оставил как было.<br>' : '') +
           (flagged ? 'Проверить: ' + flagged + ' (помечены ⚠). ' : '') +
           (dup.length ? 'Уже были в списке: ' + esc(dup.join(', ')) + '. ' : '') +
-          (other ? 'Строк с другой датой: ' + other + '. ' : '') +
-          (bad.length ? '<br>Не разобрал: ' + bad.map(function (s) { return '«' + esc(s.raw) + '»'; }).join(', ') : '') + '</div>';
+          // Пропущенные строки целиком и почему: можно поправить и вставить ещё раз.
+          (r.skipped.length ? '<br><b>Пропущено строк: ' + r.skipped.length + '</b><ul class="skipped">' + r.skipped.map(function (s) {
+            return '<li>«' + esc(s.raw) + '» — ' + esc(s.reason) + (s.date ? ' (' + s.date + ', а нужно ' + esc(dateShort()) + ')' : '') + '</li>';
+          }).join('') + '</ul>' : '') + '</div>';
         break;
       }
       case 'clearAll':
