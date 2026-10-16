@@ -101,6 +101,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .line2 .ptail { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; }
 .sorthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .sorthead .btn { flex: none; }
+.updown { margin-left: auto; display: inline-flex; gap: 8px; }
 .chip[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
 .badge.warnb { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
@@ -319,17 +320,19 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!d || d.example || !(d.people || []).length) return;
     const h = loadHist();
     const json = JSON.stringify(d);
-    if (h.length && JSON.stringify(h[h.length - 1].day) === json) return;
+    if (h.length && JSON.stringify(h[h.length - 1].day) === json) { lastKeepAt = Date.now(); return; }
     // Кто работал: для автокопии и «перед правкой» — автор последней правки общего дня, иначе тот, кто на этом телефоне.
     const by = sync.on ? (/^(автокопия|перед правкой )/.test(why) ? sync.by || sync.me : sync.me) || '' : '';
     h.push({ at: Date.now(), why: why, by: by, day: JSON.parse(json) });
+    lastKeepAt = h[h.length - 1].at;
     while (h.length > HIST_MAX) h.shift();
     // Если память переполнена, выкидываю старые копии.
     while (h.length) { try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); return; } catch (e) { h.shift(); } }
   }
+  let lastKeepAt = null; // время последней копии, чтобы не читать историю на каждое нажатие
   function autoKeep() {
-    const h = loadHist();
-    if (!h.length || Date.now() - h[h.length - 1].at > 15 * 60000) keep('автокопия');
+    if (lastKeepAt === null) { const h = loadHist(); lastKeepAt = h.length ? h[h.length - 1].at : 0; }
+    if (Date.now() - lastKeepAt > 15 * 60000) keep('автокопия');
   }
   // Чужая правка, после которой пропадает много людей или меняется дата.
   function bigDrop(before, after) {
@@ -679,7 +682,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       field('Место (для имени файла)', 'place', day.place) +
       '</div>' + '<div class="grid2">' + field('Нам за человека, ₽', 'rate', day.rate, 'inputmode="numeric"') + '</div>' +
       (showBrig || String(day.brigadier || '').trim()
-        ? '<div class="row"><label class="grow">Бригадир (в Excel и именах файлов)<input data-path="brigadier" value="' + esc(day.brigadier) + '" autocomplete="off"></label>' +
+        ? '<div class="row"><label class="grow">Бригадир (в Excel)<input data-path="brigadier" value="' + esc(day.brigadier) + '" autocomplete="off"></label>' +
           '<button class="btn small" data-act="brigDel" style="align-self:end">Убрать</button></div>'
         : '<div class="row"><button class="btn small" data-act="brigAdd">Добавить бригадира</button></div>') +
       '</div>' +
@@ -731,17 +734,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function historyCard() {
     const h = loadHist();
     if (!h.length) return '';
-    const rows = h.map(function (x, i) { return { x: x, i: i }; }).reverse().map(function (r) {
-      const x = r.x, i = r.i;
+    const rows = h.slice().reverse().map(function (x) {
       const n = (x.day.people || []).filter(function (p) { return p.status !== 'refused'; }).length;
       const dp = C.dateParts(x.day.date);
       const who = whoName(x.by, false);
       const info = fmtAt(new Date(x.at).toISOString()) + (who ? ' · ' + esc(who) : '') + ' · ' + esc(x.why) + ' · день ' + (dp ? C.pad2(dp.d) + '.' + C.pad2(dp.m) : '?') + ', ' + n + ' чел.';
-      if (pendingConfirm === 'histBack' + i) {
+      if (pendingConfirm === 'histBack' + x.at) {
         return '<div class="hist"><div>' + info + '</div><div class="note">Текущий день заменится этой копией' + (sync.on ? ' у всех, кто вошёл' : '') + '. Сам текущий день тоже сохранится в истории.</div>' +
-          '<div class="confirm"><button class="btn danger" data-act="histBack" data-i="' + i + '" data-yes="1">Вернуть</button><button class="btn" data-act="cancelConfirm">Отмена</button></div></div>';
+          '<div class="confirm"><button class="btn danger" data-act="histBack" data-v="' + x.at + '" data-yes="1">Вернуть</button><button class="btn" data-act="cancelConfirm">Отмена</button></div></div>';
       }
-      return '<div class="hist"><div>' + info + '</div><button class="btn small" data-act="histBack" data-i="' + i + '">Вернуть как было</button></div>';
+      return '<div class="hist"><div>' + info + '</div><button class="btn small" data-act="histBack" data-v="' + x.at + '">Вернуть как было</button></div>';
     }).join('');
     return '<div class="card"><details' + (/^histBack/.test(pendingConfirm || '') ? ' open' : '') + '><summary>История дня (' + h.length + ')</summary>' +
       '<div class="muted">Копии хранятся на этом телефоне: перед «Новый день», открытием файла, раскладкой заново, удалением, перед большой правкой второго человека и раз в 15 минут.</div>' +
@@ -785,9 +787,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         ['Поле', 'Цех', 'Цех/поле'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
         '</div><div class="seg" role="group" aria-label="Транспорт">' +
         ['газель', 'машина'].map(function (k) { return '<button data-act="gVehicle" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + ((g.vehicle || 'газель') === k) + '">' + (k === 'газель' ? 'Газель' : 'Машина') + '</button>'; }).join('') +
-        '</div><span class="grow"></span>' +
-        '<button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше">↑</button>' +
-        '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже">↓</button></div>' +
+        '</div><span class="updown"><button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше">↑</button>' +
+        '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже">↓</button></span></div>' +
         '<div class="grid3">' +
         (g.vehicle === 'машина'
           ? field('Марка', pre + 'carName', g.carName, 'placeholder="тойота королла"') + field('Номер', pre + 'number', g.number, 'inputmode="numeric"')
@@ -860,7 +861,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     let h = '<section>' + dayDoneBanner() + searchCard();
     h += '<div class="card"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
-      '<textarea id="vkText" placeholder="12.10 Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
+      '<textarea id="vkText" placeholder="' + esc(dateShort() || '12.10') + ' Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
       '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button>' + (vkDraft ? '<button class="btn" data-act="vkClear">Очистить</button>' : '') + '</div>' +
       (parseReport ? parseReport : '') +
       '</div>';
@@ -1026,6 +1027,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }).join('') + '</div></div>';
   }
 
+  function kindChip(p) {
+    return '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>';
+  }
   function personRow(p, n) {
     const flags = (p.flags || []).length
       ? '<div class="flag">⚠ ' + esc(p.flags.join('; ')) + (p.raw ? ' <code>«' + esc(p.raw) + '»</code>' : '') +
@@ -1055,6 +1059,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       }).join('') + '</div>' +
       (tripN[bookKey(p)] ? '<span class="trips">' + C.tripsLabel(tripN[bookKey(p)]) + '</span>' : '') +
       // Водитель — только в машине.
+      (!g && !rk ? kindChip(p) : '') +
       (inCar ? '<button class="chip" data-act="pDriver" data-id="' + p.id + '" aria-pressed="' + !!p.driver + '">' + (p.driver ? '✓ водитель' : 'водитель') + '</button>' : '') +
       (isFlaky(p) && !more ? '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="true">✓ часто не выходит</button>' : '') +
       '<span class="ptail">' + phoneInline(p) +
@@ -1063,8 +1068,8 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       (more ? '<div class="line2">' +
         '<button class="iconbtn" data-act="pUp" data-id="' + p.id + '" aria-label="Выше">↑</button>' +
         '<button class="iconbtn" data-act="pDown" data-id="' + p.id + '" aria-label="Ниже">↓</button>' +
-        // Поле/цех — только в сборной газели и у тех, кто пока без газели.
-        (!g && !rk || g && g.kind === 'Цех/поле' ? '<button class="chip" data-act="pKind" data-id="' + p.id + '" aria-label="Поле или цех">' + (p.kind === 'цех' ? 'цех' : 'поле') + '</button>' : '') +
+        // Поле/цех — в сборной газели; у тех, кто без газели, он виден сразу в строке выше.
+        (g && g.kind === 'Цех/поле' ? kindChip(p) : '') +
         '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
         (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
         '<span class="ptail">' +
@@ -1101,7 +1106,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         issues.slice().reverse().map(function (x) {
           return '<div class="issue"><div class="muted">' + esc(fmtAt(x.at)) + (x.by ? ' · ' + esc(x.by) : '') + ' · ' + esc(TAB_NAMES[x.ctx && x.ctx.tab] || '') + '</div>' +
             (x.text ? '<div>' + esc(x.text).replace(/\n/g, '<br>') + '</div>' : '') +
-            (x.img ? '<img src="' + x.img + '" alt="Скриншот">' : x.imgRemote ? '<div class="muted">Скриншот загружается…</div>' : '') +
+            (x.img ? '<img src="' + esc(x.img) + '" alt="Скриншот">' : x.imgRemote ? '<div class="muted">Скриншот загружается…</div>' : '') +
             '<div class="row"><button class="btn small danger" data-act="issueDel" data-id="' + x.id + '">Удалить</button></div></div>';
         }).join('') +
         '<div class="row"><button class="btn primary" data-act="issuesExport">Скачать все записи</button></div>' +
@@ -1117,7 +1122,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const c = x.ctx || {};
       return '<section><h2>' + (i + 1) + '. ' + esc(fmtAt(x.at)) + (x.by ? ' · ' + esc(x.by) : '') + ' · ' + esc(TAB_NAMES[c.tab] || '') + '</h2>' +
         (x.text ? '<p>' + esc(x.text).replace(/\n/g, '<br>') + '</p>' : '') +
-        (x.img ? '<img src="' + x.img + '" alt="">' : '') +
+        (x.img ? '<img src="' + esc(x.img) + '" alt="">' : '') +
         '<p class="ctx">Экран ' + esc(c.w) + '×' + esc(c.h) + ' · день ' + esc(c.date) + ' · ' + esc(c.ua) + '</p></section>';
     }).join('');
     return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -1823,7 +1828,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       v[t.dataset.f] = Math.max(0, parseInt(t.value, 10) || 0); v.manual = true;
       tally[k] = v; saveTally(); queueSync(); render(); return;
     }
-    else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); return; }
+    else if (t.dataset.path) { if (t.dataset.path === 'stopsText' || t.dataset.path === 'latinNames') save(); rerender(); return; }
     else return;
     undoMark(before, act); save(); render();
   });
@@ -1888,9 +1893,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         return;
       }
       case 'histBack': {
-        if (!yes) { pendingConfirm = 'histBack' + i; break; }
+        if (!yes) { pendingConfirm = 'histBack' + b.dataset.v; break; }
         pendingConfirm = null;
-        const h = loadHist()[i];
+        const h = loadHist().find(function (x) { return String(x.at) === b.dataset.v; });
         if (!h) break;
         keep('перед возвратом');
         day = migrate(h.day); day.example = false; assignReport = null;
@@ -1900,14 +1905,14 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         if (!yes) { pendingConfirm = 'newDay'; break; }
         pendingConfirm = null;
         keep('перед «Новый день»');
-        day.people = []; day.example = false; assignReport = null;
+        day.people = []; day.example = false; assignReport = null; parseReport = null; vkDraft = '';
         day.date = nextDate();
         day.gazelles.forEach(function (g) { g.contact = ''; });
         day.zp = ''; day.replaceField = '-'; day.replaceShop = '-';
         break;
       case 'exportJson': {
         const name = 'den_' + dateShort().replace('.', '_') + '_' + C.translit(day.brigadier || 'brigada') + '.json';
-        const data = Object.assign({}, day, { phonebook: book, marks: marks, tally: tally });
+        const data = Object.assign({}, day, { phonebook: book, marks: marks, tally: tally, trips: trips });
         await offer(name, new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
         return;
       }
@@ -2025,7 +2030,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         if (!text.trim()) { parseReport = '<div class="note">Вставьте сюда сообщения из чата ВК.</div>'; break; }
         const dp = C.dateParts(day.date);
         if (!dp) { parseReport = '<div class="note">Сначала укажите дату на вкладке «День».</div>'; break; }
-        if (day.example) { const fresh = C.newDay(); fresh.date = day.date; day = fresh; }
+        if (day.example) { const fresh = C.newDay(); fresh.date = day.date; day = fresh; const ps = prevSnap(); if (ps) applySnap(ps); }
         const r = C.parseVk(text, dp.d, dp.m, stopsList());
         const existing = {};
         day.people.forEach(function (p) { existing[C.norm(C.personLabel(p))] = true; });
@@ -2130,6 +2135,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         safeSet(MARKS_KEY, JSON.stringify(marks));
         Object.keys(day.tally || {}).forEach(function (k) { if (!tally[k] || !tally[k].manual) tally[k] = day.tally[k]; });
         saveTally();
+        Object.keys(day.trips || {}).forEach(function (k) { if (!trips[k]) trips[k] = day.trips[k]; });
+        saveTrips();
+        delete day.trips;
         delete day.phonebook;
         delete day.marks;
         delete day.tally;

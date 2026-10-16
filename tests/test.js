@@ -39,6 +39,11 @@ assert.deepStrictEqual(got, [
 assert.ok(r.people[9].flags.includes('остановка не распознана'));
 assert.strictEqual(r.skipped.filter((s) => s.reason === 'другая дата').length, 1);
 
+// Дата словами и двойная фамилия.
+const rm = C.parseVk('12 октября Смирнов А рынок поле\n12 окт. Петров-Водкин Б художка цех\n12 мая Орлов В рынок', 12, 10, stops);
+assert.deepStrictEqual(rm.people.map((p) => [C.personLabel(p), p.stop, p.kind]), [['Смирнов А', 'Рынок', 'поле'], ['Петров-Водкин Б', 'Художка', 'цех']]);
+assert.deepStrictEqual(rm.skipped.map((s) => s.date), ['12.05']);
+
 assert.strictEqual(C.accusative('Петрова Э'), 'Петрову Э');
 assert.strictEqual(C.accusative('Соколов К'), 'Соколова К');
 assert.strictEqual(C.accusative('Шульц Е'), 'Шульц Е');
@@ -115,6 +120,10 @@ assert.deepStrictEqual(C.fileNames(day), { word: '12_10_41чел_Зубилих�
   car.fuel = '1000';
   d2.people.find((p) => p.surname === 'Водилов').driver = false;
   assert.ok(C.warnings(d2).some((w) => /бензин/.test(w)));
+  // Пустая газель среди занятых — предупреждение.
+  const de = C.newDay();
+  de.people.push({ id: 'e1', surname: 'Пустов', initial: 'А', stop: 'Рынок', gazId: de.gazelles[0].id, status: 'ok', flags: [] });
+  assert.deepStrictEqual(C.warnings(de).filter((w) => /пустая/.test(w)), ['Газель 2: пустая, в Word будут одни свободные места.', 'Газель 3: пустая, в Word будут одни свободные места.']);
   d2.people.find((p) => p.surname === 'Водилов').driver = true;
   // В машине нет строки «По остановкам прошу отписаться».
   const JSZip = require('jszip');
