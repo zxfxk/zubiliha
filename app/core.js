@@ -173,10 +173,22 @@
   }
 
   // text — вставленный текст; day, month — нужная дата (числа); stops — parseStops().
+  // «12 октября», «12 окт.» в начале строки → «12.10».
+  const MONTH_RE = /^(\s*\d{1,2})\s+(янв|фев|мар|апр|ма[яй]|июн|июл|авг|сен|окт|ноя|дек)[а-яё]*\.?/i;
+  const MONTH_ABBR = ['янв', 'фев', 'мар', 'апр', 'ма', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  function monthDates(text) {
+    return String(text || '').split(/\r?\n/).map(function (l) {
+      return l.replace(MONTH_RE, function (_, d, m) {
+        const k = m.toLowerCase();
+        return d + '.' + pad2(MONTH_ABBR.indexOf(/^ма/.test(k) ? 'ма' : k) + 1);
+      });
+    }).join('\n');
+  }
+
   function parseVk(text, day, month, stops) {
     const people = [];
     const skipped = [];
-    joinMessages(text).forEach(function (line) {
+    joinMessages(monthDates(text)).forEach(function (line) {
       const m = line.match(DATE_RE);
       const mm = m ? null : line.match(MID_DATE_RE);
       let body;
@@ -200,7 +212,8 @@
       let rest = fixLetters(ph.rest);
       if (CAR_RE.test(rest)) { flags.push('может на легковой'); rest = rest.replace(CAR_RE, ' '); }
       CAR_RE.lastIndex = 0;
-      const words = rest.split(/[^А-Яа-яA-Za-z0-9]+/).filter(Boolean);
+      // Двойная фамилия «Петров-Водкин» — одно слово.
+      const words = rest.match(/[А-ЯA-Z][а-яa-z]+(?:-[А-ЯA-Z][а-яa-z]+)+|[А-Яа-яA-Za-z0-9]+/g) || [];
       const lower = words.map(function (w) { return norm(w); });
 
       let kind = '';
@@ -212,7 +225,7 @@
 
       // Слова, которые могут быть инициалами (одна буква), не участвуют в поиске остановки.
       const isInitial = function (i) {
-        return /^[А-Яа-яA-Za-z]$/.test(words[i]) && i > 0 && words[i - 1].length >= 2 && /^[А-Яа-яA-Za-z]+$/.test(words[i - 1]) && !isKind(i - 1);
+        return /^[А-Яа-яA-Za-z]$/.test(words[i]) && i > 0 && words[i - 1].length >= 2 && /^[А-Яа-яA-Za-z-]+$/.test(words[i - 1]) && !isKind(i - 1);
       };
       const flat = [];
       const flatIdx = [];
@@ -257,7 +270,7 @@
         }
         // Фамилия пишется с большой буквы; маленькими — только если это первое слово записи.
         if (persons.length && !/^[А-ЯA-Z]/.test(w)) { leftover.push(w); continue; }
-        persons.push({ surname: cap(w), initial: '', flags: [] });
+        persons.push({ surname: w.split('-').map(cap).join('-'), initial: '', flags: [] });
       }
       if (!sm && persons.length > 1 && !persons[persons.length - 1].initial) {
         // «Иванов А Новаяостановка»: последнее слово без инициала — скорее всего неизвестная остановка.
@@ -583,6 +596,7 @@
       const cap = +g.capacity || 0;
       const name = (g.vehicle === 'машина' ? 'Машина ' : 'Газель ') + (i + 1);
       if (n > cap) w.push(name + ': ' + n + ' чел. при ' + cap + ' местах.');
+      if (!n && !g.noOrder && day.people.some(function (p) { return p.gazId && p.status !== 'refused'; })) w.push(name + ': пустая, в Word будут одни свободные места.');
       if (!String(g.number).trim() && !String(g.carName || '').trim()) w.push(name + ': не указан номер.');
     });
     const flagged = day.people.filter(function (p) { return p.flags && p.flags.length && p.status !== 'refused'; });
