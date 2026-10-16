@@ -55,6 +55,7 @@ nav.tabs button[aria-current="page"] { color: var(--accent); box-shadow: inset 0
 section { display: grid; gap: 14px; padding-top: 14px; }
 h2 { font: 700 15px/1.3 var(--display); margin: 6px 0 0; }
 h3 { font: 600 15px/1.3 var(--body); margin: 0; }
+section > .card { scroll-margin-top: 90px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 10px; min-width: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
@@ -86,13 +87,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
 .seg button.st-noshow[aria-pressed="true"] { background: var(--marker); color: var(--marker-fg); }
 .seg button.st-refused[aria-pressed="true"] { background: var(--muted); color: var(--surface); }
-.ghead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ghead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .count { font-variant-numeric: tabular-nums; font-weight: 600; }
 .count.over { color: var(--danger); }
 .person { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
 .person:first-of-type { border-top: 0; padding-top: 0; }
-.person .line1 { display: grid; grid-template-columns: 24px 1fr 1fr 58px; gap: 6px; align-items: center; }
-.person .line1 select { padding: 9px 4px; }
+.person .line1 { display: grid; grid-template-columns: 20px 1fr 1fr 68px; gap: 6px; align-items: center; }
+.person .line1 input { padding-inline: 8px; }
+.person .line1 select { padding: 9px 2px 9px 6px; }
 .person .num { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: 14px; }
 .person.noshow .pname { background: var(--marker); color: var(--marker-fg); }
 .person.refused .pname, .person.refused .pstop { text-decoration: line-through; color: var(--muted); }
@@ -101,7 +103,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .person .line2 .ptail { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; }
 .sorthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .sorthead .btn { flex: none; }
-.updown { margin-left: auto; display: inline-flex; gap: 8px; }
+.updown { display: inline-flex; gap: 6px; align-self: center; }
+.updown .iconbtn:disabled { opacity: .35; }
+.ghead h2 { flex: 1; min-width: 0; }
+.pick { display: flex; gap: 8px; } .pick input { flex: 1; } .pick select { flex: 0 0 auto; width: 40%; max-width: 180px; }
+.jump { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
 .badge.warnb { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
@@ -170,7 +176,10 @@ details.backup { margin-top: 12px; }
   /* «Газели» и «Люди»: карточки газелей в 2–3 колонки, остальное во всю ширину. */
   main[data-tab="gaz"] section { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); align-items: start; }
   main[data-tab="people"] section { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); align-items: start; }
-  main[data-tab="gaz"] section > :not(.gcard), main[data-tab="people"] section > :not(.gcard) { grid-column: 1 / -1; }
+  main[data-tab="gaz"] section > :not(.gcard), main[data-tab="people"] section > :not(.gcard, .tool, .tool-vk) { grid-column: 1 / -1; }
+  main[data-tab="people"] section:not(:has(> .banner)) { grid-auto-flow: row dense; }
+  main[data-tab="people"] section:not(:has(> .banner)) > .tool-vk { grid-column: 1; grid-row: span 3; }
+  main[data-tab="people"] section:not(:has(> .banner)) > .tool { grid-column: 2; }
   main section:has(> .banner) { grid-template-columns: 1fr; }
   main[data-tab="files"] section, main[data-tab="issues"] section { max-width: 1100px; }
   .preview:not(.shotsrc) table { font-size: 13px; }
@@ -583,10 +592,9 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const reserve = active.filter(C.reserveKind).length;
     // Сколько ещё людей нужно найти: все места минус все, кто едет (и в газелях, и пока без газели), кроме замены.
     const left = cap - (active.length - reserve);
-    const need = !cap ? '' : left > 0 ? ', осталось набрать ' + left + ' ' + (left % 10 === 1 && left % 100 !== 11 || [2, 3, 4].indexOf(left % 10) >= 0 && [12, 13, 14].indexOf(left % 100) < 0 ? 'человека' : 'человек')
-      : left === 0 ? ', набрано полностью' : ', людей больше, чем мест, на ' + (-left);
+    const need = !cap ? '' : left > 0 ? ' · нужно ещё ' + left : left === 0 ? ' · набрано полностью' : ' · лишних ' + (-left);
     document.getElementById('subtitle').textContent =
-      (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · ' : '') + 'в газелях ' + placed + ' из ' + cap + ' мест' + need +
+      (String(day.brigadier || '').trim() ? 'Бригадир: ' + day.brigadier + ' · мест ' : 'Мест ') + placed + '/' + cap + need +
       (active.length - placed - reserve ? ' · без газели ' + (active.length - placed - reserve) : '') +
       (reserve ? ' · замена ' + reserve : '') +
       (noshow ? ' · не вышли ' + noshow : '') +
@@ -776,19 +784,19 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
           : '<button class="btn small" data-act="useSnap">Как в прошлый раз</button>') +
         '</div></div>';
     }
-    h += sortCard();
     day.gazelles.forEach(function (g, i) {
       const n = C.peopleOf(day, g).length;
       const over = n > (+g.capacity || 0);
       const pre = 'gazelles.' + i + '.';
       h += '<div class="card gcard">' +
-        '<div class="ghead"><h2>' + esc(gTitle(g)) + '</h2><span class="count' + (over ? ' over' : '') + '">' + n + ' / ' + (+g.capacity || 0) + '</span></div>' +
+        '<div class="ghead"><h2>' + esc(gTitle(g)) + '</h2><span class="count' + (over ? ' over' : '') + '">' + n + ' / ' + (+g.capacity || 0) + '</span>' +
+        '<span class="updown"><button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше"' + (i ? '' : ' disabled') + '>↑</button>' +
+        '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже"' + (i < day.gazelles.length - 1 ? '' : ' disabled') + '>↓</button></span></div>' +
         '<div class="row"><div class="seg" role="group" aria-label="Куда едет">' +
         ['Поле', 'Цех', 'Цех/поле'].map(function (k) { return '<button data-act="gKind" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + (g.kind === k) + '">' + k + '</button>'; }).join('') +
         '</div><div class="seg" role="group" aria-label="Транспорт">' +
         ['газель', 'машина'].map(function (k) { return '<button data-act="gVehicle" data-i="' + i + '" data-v="' + k + '" aria-pressed="' + ((g.vehicle || 'газель') === k) + '">' + (k === 'газель' ? 'Газель' : 'Машина') + '</button>'; }).join('') +
-        '</div><span class="updown"><button class="iconbtn" data-act="gUp" data-i="' + i + '" aria-label="Выше">↑</button>' +
-        '<button class="iconbtn" data-act="gDown" data-i="' + i + '" aria-label="Ниже">↓</button></span></div>' +
+        '</div></div>' +
         '<div class="grid3">' +
         (g.vehicle === 'машина'
           ? field('Марка', pre + 'carName', g.carName, 'placeholder="тойота королла"') + field('Номер', pre + 'number', g.number, 'inputmode="numeric"')
@@ -818,18 +826,15 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         (g.vehicle === 'машина'
           ? '<div class="grid2">' + field('Бензин водителю, ₽', pre + 'fuel', g.fuel, 'inputmode="numeric" placeholder="1000"') +
             '<div class="muted" style="align-self:end">Добавится водителю в Excel.</div></div>'
-          : field('По остановкам прошу отписаться –', pre + 'contact', g.contact) +
-            '<label>Выбрать из этой газели<select data-act="gContact" data-i="' + i + '"><option value="">выбрать…</option>' + peopleOptions(g) + '</select></label>') +
+          : '<div class="lbl">По остановкам прошу отписаться –<div class="pick"><input data-path="' + pre + 'contact" value="' + esc(g.contact) + '" aria-label="Кому отписаться">' +
+            '<select data-act="gContact" data-i="' + i + '" aria-label="Выбрать из этой газели"><option value="">из газели…</option>' + peopleOptions(g) + '</select></div></div>') +
         (pendingConfirm === 'gDel' + i
           ? '<div class="note">Люди из этой газели перейдут в «Без газели».</div><div class="confirm"><button class="btn danger" data-act="gDel" data-i="' + i + '" data-yes="1">Удалить газель</button><button class="btn" data-act="cancelConfirm">Отмена</button></div>'
           : '<div class="row"><button class="btn danger small" data-act="gDel" data-i="' + i + '">Удалить газель</button></div>') +
         '</div>';
     });
     h += '<div class="row"><button class="btn primary" data-act="gAdd">Добавить газель</button><button class="btn" data-act="gAddCar">Добавить машину</button></div>';
-    h += '<div class="card"><h2>Низ таблицы</h2>' +
-      field('ЗП поле/цех прошу получить/выдать –', 'zp', day.zp) +
-      field('Приписка (курсивом)', 'footer', day.footer) +
-      '</div>' + nextCard(noNumber(), 'people') + '</section>';
+    h += nextCard(noNumber(), 'people') + '</section>';
     return h;
   }
 
@@ -849,9 +854,16 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   }
   function searchCard() {
     if (!day.people.length) return '';
-    return '<div class="card"><h2>Найти человека</h2>' +
+    const none = day.people.filter(function (p) { return !gById(p.gazId) && !C.reserveKind(p) && p.status !== 'refused'; }).length;
+    const jumps = (none ? [['grp-none', 'Без газели ' + none]] : []).concat(day.gazelles.map(function (g, gi) {
+      return ['grp-' + g.id, gShort(g, gi) + ' ' + C.peopleOf(day, g).length + '/' + (+g.capacity || 0)];
+    })).concat([['grp-reserve', 'Замена ' + day.people.filter(function (p) { return C.reserveKind(p) && p.status !== 'refused'; }).length]]);
+    return '<div class="card tool"><h2>Найти человека</h2>' +
       '<input id="pSearch" type="search" placeholder="Фамилия" autocomplete="off" value="' + esc(searchQ) + '">' +
-      '<div id="pSearchRes" class="row">' + searchResults() + '</div></div>';
+      '<div id="pSearchRes" class="row">' + searchResults() + '</div>' +
+      '<div class="jump" aria-label="Перейти к газели">' + jumps.map(function (j) {
+        return '<button class="chip" data-act="jump" data-v="' + j[0] + '">' + esc(j[1]) + '</button>';
+      }).join('') + '</div></div>';
   }
 
   let tripN = {};
@@ -859,7 +871,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const stops = stopsList();
     tripN = C.tripCounts(trips, day.date);
     let h = '<section>' + dayDoneBanner() + searchCard();
-    h += '<div class="card"><h2>Вставить из ВК</h2>' +
+    h += '<div class="card tool-vk"><h2>Вставить из ВК</h2>' +
       '<div class="muted">Скопируйте сообщения из чата целиком. Возьму строки с датой ' + esc(dateShort()) + ' и записи без даты вроде «Иванова А Рынок цех» (их помечу ⚠, проверьте). Остальное пропущу.</div>' +
       '<textarea id="vkText" placeholder="' + esc(dateShort() || '12.10') + ' Иванова А Рынок поле">' + esc(vkDraft) + '</textarea>' +
       '<div class="row"><button class="btn primary" data-act="parse">Разобрать</button>' + (vkDraft ? '<button class="btn" data-act="vkClear">Очистить</button>' : '') + '</div>' +
@@ -871,7 +883,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     const refused = day.people.filter(function (p) { return p.status === 'refused'; });
     // Сразу после разбора: что делать с теми, кому не хватило места, без прокрутки вниз.
     if (parseReport && none.length) {
-      h += '<div class="card"><div class="row"><b class="grow">Без газели: ' + none.length + ' чел.</b>' +
+      h += '<div class="card tool"><div class="row"><b class="grow">Без газели: ' + none.length + ' чел.</b>' +
         '<button class="btn small" data-act="toReserve">В замену</button><button class="btn small" data-act="gAddAssign">Добавить газель и разложить</button></div></div>';
     }
 
@@ -879,7 +891,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     h += sortCard();
 
     if (none.length || !day.people.length) {
-      h += '<div class="card gcard"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
+      h += '<div class="card gcard" id="grp-none"><div class="ghead"><h2>Без газели</h2><span class="count">' + none.length + '</span></div>';
       if (none.length) {
         h += '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="">А–Я</button><select class="grow" data-act="moveAll"><option value="">Перенести всех в…</option>' +
           day.gazelles.map(function (g) { return '<option value="' + g.id + '">' + esc(gTitle(g)) + '</option>'; }).join('') +
@@ -895,7 +907,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       const cap = +x.g.capacity || 0;
       const n = x.list.length;
       const sum = C.stopSummary(day, x.g, stops).map(function (s) { return esc(s.stop) + ' — ' + s.count; }).join(' · ');
-      h += '<div class="card gcard"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
+      h += '<div class="card gcard" id="grp-' + x.g.id + '"><div class="ghead"><h2>' + esc(gTitle(x.g)) + '</h2><span class="count' + (n > cap ? ' over' : '') + '">' + n + ' / ' + cap +
         (n < cap ? ' · своб. ' + (cap - n) : n > cap ? ' · лишних ' + (n - cap) : '') + '</span></div>' +
         (sum ? '<div class="stops">' + sum + '</div>' : '') +
         seatHint(x.g, n, cap, stops) +
@@ -914,7 +926,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     // Замена — такие же списки, как газели: остановка, статус, перенос в газель выбором.
     [['поле', 'Замена поле'], ['цех', 'Замена цех']].forEach(function (r) {
       const list = C.reserveOf(day, r[0]);
-      h += '<div class="card gcard"><div class="ghead"><h2>' + r[1] + '</h2><span class="count">' + list.length + '</span></div>' +
+      h += '<div class="card gcard"' + (r[0] === 'поле' ? ' id="grp-reserve"' : '') + '><div class="ghead"><h2>' + r[1] + '</h2><span class="count">' + list.length + '</span></div>' +
         (list.length > 1 ? '<div class="row"><button class="btn small" data-act="sortAlpha" data-g="" data-r="' + r[0] + '">По алфавиту</button><button class="btn small" data-act="sortAlpha" data-g="" data-r="' + r[0] + '" data-v="stop">По остановкам</button></div>' : '') +
         (list.length ? '' : '<div class="muted">Пока никого. Перенести сюда можно выбором «→ ' + r[1] + '» у человека.</div>') +
         list.map(function (p, i) { return personRow(p, i + 1); }).join('') +
@@ -935,7 +947,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
     if (!day.people.length) return '';
     const seated = day.people.some(function (p) { return p.gazId && p.status !== 'refused'; });
     // Нужно редко, поэтому свёрнуто. «Очистить все газели» стоит отдельно в правом верхнем углу, подальше от сортировки.
-    return '<div class="card"><details' + (pendingConfirm === 'clearAll' ? ' open' : '') + '><summary>Сортировка и очистка</summary><div class="sorthead"><div class="muted">' + (seated ? 'Порядок людей в Word, во всех газелях' : '') + '</div>' +
+    return '<div class="card tool"><details' + (pendingConfirm === 'clearAll' ? ' open' : '') + '><summary>Сортировка и очистка</summary><div class="sorthead"><div class="muted">' + (seated ? 'Порядок людей в Word, во всех газелях' : '') + '</div>' +
       (pendingConfirm === 'clearAll' ? '' : '<button class="btn small danger" data-act="clearAll">Очистить все газели</button>') + '</div>' +
       (pendingConfirm === 'clearAll'
         ? '<div class="note">Убрать всех людей (' + day.people.length + ') из газелей и из «Без газели»?' + (sync.on ? ' Список очистится у обоих.' : '') + ' Газели, дата и настройки останутся. Копия сохранится в «Истории дня» на вкладке «День».</div>' +
@@ -951,7 +963,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   function assignCard(noneCount) {
     const vans = day.gazelles.filter(function (g) { return g.vehicle !== 'машина'; });
     const inVans = day.people.some(function (p) { return p.status !== 'refused' && vans.some(function (g) { return g.id === p.gazId; }); });
-    let h = '<div class="card"><h2>Распределить по газелям</h2>';
+    let h = '<div class="card tool"><h2>Распределить по газелям</h2>';
     if (!vans.length) return h + '<div class="muted">Сначала добавьте газели на вкладке «Газели».</div></div>';
     h += '<div class="muted">По зонам из справочника остановок: каждая зона в свою газель, деревни вместе, цех в цеховую или сборную. Машины не трогаю. Потом можно поправить руками.</div>';
     if (pendingConfirm === 'assignAll') {
@@ -988,8 +1000,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
   // Телефон стоит в строке статуса, справа, рядом с «Удалить», чтобы строка человека не росла в высоту.
   function phoneInline(p) {
     if (!p.phone || openRows.has(p.id)) return '';
-    return '<span class="ptel"><a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '">' + esc(p.phone) + '</a>' +
-      '<button class="linkbtn" data-act="pPhone" data-id="' + p.id + '" aria-label="Изменить телефон" title="Изменить телефон">✎</button></span>';
+    return '<span class="ptel"><a href="tel:' + esc(String(p.phone).replace(/[^\d+]/g, '')) + '" title="Позвонить">☎ ' + esc(String(p.phone).replace(/^\+7\s*/, '')) + '</a></span>';
   }
 
   // Кто-то из газели отказался и есть свободные места: кого можно посадить.
@@ -1071,7 +1082,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         // Поле/цех — в сборной газели; у тех, кто без газели, он виден сразу в строке выше.
         (g && g.kind === 'Цех/поле' ? kindChip(p) : '') +
         '<button class="chip" data-act="pFlaky" data-id="' + p.id + '" aria-pressed="' + isFlaky(p) + '">' + (isFlaky(p) ? '✓ часто не выходит' : 'часто не выходит') + '</button>' +
-        (!p.phone && !openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '" title="Добавить телефон">+ ☎</button>' : '') +
+        (!openRows.has(p.id) ? '<button class="chip" data-act="pPhone" data-id="' + p.id + '">' + (p.phone ? '✎ телефон' : '+ телефон') + '</button>' : '') +
         '<span class="ptail">' +
         (pendingConfirm === 'pDel' + p.id
           ? '<button class="btn small danger" data-act="pDel" data-id="' + p.id + '" data-yes="1">Точно удалить</button><button class="btn small" data-act="cancelConfirm">Нет</button>'
@@ -1193,7 +1204,10 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
       (canShareFiles() ? '<button class="btn" data-act="shotShare">Отправить картинкой</button>' : '<button class="btn" data-act="shotSave">Сохранить картинку</button>') +
       '</div><div id="shotMsg" class="muted" role="status"></div>' +
       '<div class="muted" id="scrollHint" hidden>Таблица шире экрана: листайте её вправо →</div>' +
-      '<div class="preview">' + previewHtml() + '</div></div>' +
+      '<div class="preview">' + previewHtml() + '</div>' +
+      '<details><summary>Низ таблицы: ЗП и приписка</summary><div class="grid2" style="margin-top:10px">' +
+      field('ЗП поле/цех прошу получить/выдать –', 'zp', day.zp) +
+      field('Приписка (курсивом)', 'footer', day.footer) + '</div></details></div>' +
       '<div class="card"><h2>Excel-ведомость</h2><div class="fname">' + esc(names.excel) + '</div>' +
       '<div class="muted">Только те, кто поехал: ' + went + ' чел. Отмеченные «Не вышел» и «Отказ» не попадут.</div>' +
       '<div class="row"><button class="btn primary" data-act="dlExcel">Скачать Excel</button></div></div>' +
@@ -1987,6 +2001,7 @@ details.backup > summary { font-weight: 500; font-size: 14px; color: var(--muted
         assignReport = assignSummary(C.autoAssign(day, stopsList(), mode));
         break;
       }
+      case 'jump': { const el = document.getElementById(b.dataset.v); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
       case 'pMore': if (moreRows.has(id)) moreRows.delete(id); else moreRows.add(id); render(); return;
       case 'goTab': tab = b.dataset.v; safeSet(TAB_KEY, tab); pendingConfirm = null; render(); window.scrollTo(0, 0); return;
       case 'toReserve':
